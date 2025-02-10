@@ -25,13 +25,15 @@
       "preload.js",
       "renderer.js",
       "index.html",
-      "package.json"
+      "package.json",
+      "icon.png"
     ],
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "icon.png"
     }
   }
 }
