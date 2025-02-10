@@ -35,19 +35,6 @@ let mainWindow = null;
 let tray = null;
 
 /**
- * 二重スラッシュを解除する
- */
-function replaceSlashes(inputString) {
-    // 「//」を「/」に置換
-    let result = inputString.replace(/\/\//g, '/');
-
-    // 「\\」を「\」に置換
-    result = result.replace(/\\/g, '\\');
-
-    return result;
-}
-
-/**
  * Windowsスタートアップフォルダにショートカットを作成
  * (Windows以外では動作しません)
  */
