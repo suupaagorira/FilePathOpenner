@@ -32,7 +32,7 @@
     txtOpenParentShortcut.value = currentSettings.openParentShortcut || "Ctrl+Shift+E";
     chkSinglePath.checked = !!currentSettings.openAsSinglePath;
     chkTrimSpaces.checked = !!currentSettings.trimSpaces;
-    txtRemoveList.value = currentSettings.removeList || "\"";
+    txtRemoveList.value = currentSettings.removeList || "\"'<>＜＞[]{}";
 
     // スタートアップ登録をチェック
     try {
