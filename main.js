@@ -274,8 +274,9 @@ function openClipboardPath(openParent) {
     });
 }
 
-app.whenReady().then(() => {
-    createWindow();
+if (process.env.NODE_ENV !== "test") {
+    app.whenReady().then(() => {
+        createWindow();
 
     // タスクトレイアイコンの設定
     const iconPath = path.join(app.getAppPath(), "icon.png"); // 任意のアイコンを用意
@@ -301,23 +302,23 @@ app.whenReady().then(() => {
     tray.setContextMenu(contextMenu);
 
     // グローバルショートカット登録
-    registerGlobalShortcuts();
-});
+        registerGlobalShortcuts();
+    });
 
-// 全ウィンドウが閉じてもアプリ自体は終了させずタスクトレイに隠し続ける
-app.on("window-all-closed", (e) => {
-    e.preventDefault();
-});
+    app.on("window-all-closed", (e) => {
+        e.preventDefault();
+    });
 
-// アプリがアクティブになったらウィンドウを表示
-app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-    } else {
-        mainWindow.show();
-        mainWindow.setSkipTaskbar(false);
-    }
-});
+    app.on("activate", () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow();
+        } else {
+            mainWindow.show();
+            mainWindow.setSkipTaskbar(false);
+        }
+    });
+}
+
 
 // レンダラからのIPCハンドラ
 ipcMain.on("update-settings", (event, newSettings) => {
@@ -344,3 +345,11 @@ ipcMain.on("unregister-startup", (event) => {
 ipcMain.handle("get-settings", () => {
     return store.store;
 });
+
+// テスト用に一部関数を公開
+export {
+    registerStartupShortcut,
+    checkIfStartupRegistered,
+    unRegisterStartupShortcut,
+    openClipboardPath,
+};
