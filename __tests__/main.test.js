@@ -1,31 +1,36 @@
-import { openClipboardPath, checkIfStartupRegistered, unRegisterStartupShortcut } from '../main.js';
-import fs from 'fs';
-import { exec } from 'child_process';
-import { clipboard, shell, dialog } from 'electron';
-
-jest.mock('fs');
-jest.mock('child_process', () => ({ exec: jest.fn(), execFile: jest.fn() }));
+import { jest } from '@jest/globals';
+jest.unstable_mockModule('fs', () => ({
+  default: {
+    existsSync: jest.fn(),
+    unlink: jest.fn(),
+  },
+}));
+jest.unstable_mockModule('child_process', () => ({ exec: jest.fn(), execFile: jest.fn() }));
 
 const storeData = {};
 const getMock = jest.fn(key => storeData[key]);
 const setMock = jest.fn(obj => Object.assign(storeData, obj));
 
-jest.mock('electron-store', () => {
-  return jest.fn().mockImplementation(() => ({
+jest.unstable_mockModule('electron-store', () => ({
+  default: jest.fn().mockImplementation(() => ({
     get: getMock,
     set: setMock,
     store: storeData,
-  }));
-});
+  }))
+}));
 
-jest.mock('electron', () => {
-  return {
-    clipboard: { readText: jest.fn() },
-    shell: { openExternal: jest.fn(), openPath: jest.fn() },
-    dialog: { showErrorBox: jest.fn() },
-    app: {}, BrowserWindow: {}, globalShortcut: {}, Menu: {}, Tray: {}, nativeImage: {}, ipcMain: { on: jest.fn(), handle: jest.fn() }
-  };
-});
+const electronMock = {
+  clipboard: { readText: jest.fn() },
+  shell: { openExternal: jest.fn(), openPath: jest.fn() },
+  dialog: { showErrorBox: jest.fn() },
+  app: {}, BrowserWindow: {}, globalShortcut: {}, Menu: {}, Tray: {}, nativeImage: {}, ipcMain: { on: jest.fn(), handle: jest.fn() }
+};
+jest.unstable_mockModule('electron', () => electronMock);
+
+const fs = (await import('fs')).default;
+const { exec } = await import('child_process');
+const { openClipboardPath, checkIfStartupRegistered, unRegisterStartupShortcut } = await import('../main.js');
+const { clipboard, shell, dialog } = electronMock;
 
 describe('main.js utilities', () => {
   const originalPlatform = process.platform;
