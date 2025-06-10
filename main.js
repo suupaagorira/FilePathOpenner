@@ -188,6 +188,26 @@ function registerGlobalShortcuts() {
 }
 
 /**
+ * Find the nearest existing directory by traversing upwards.
+ *
+ * @param {string} targetPath - Path to validate.
+ * @returns {{path: string, levels: number}|null} Existing path and distance or null.
+ */
+function findExistingPath(targetPath) {
+    let current = targetPath;
+    let levels = 0;
+    while (!fs.existsSync(current)) {
+        const parent = path.dirname(current);
+        if (parent === current) {
+            return null;
+        }
+        current = parent;
+        levels += 1;
+    }
+    return { path: current, levels };
+}
+
+/**
  * クリップボード上のパスを解析し、(openParent=trueの場合)末尾ディレクトリを削除して開く
  */
 function openClipboardPath(openParent) {
@@ -259,17 +279,24 @@ function openClipboardPath(openParent) {
             return;
         }
 
-        // 存在確認
-        if (!fs.existsSync(targetPath)) {
+        const result = findExistingPath(targetPath);
+        if (!result) {
             dialog.showErrorBox("存在しないパス", `\"${targetPath}\" は存在しないパスです。`);
             return;
         }
 
-        // Windowsならexplorer.exe、Mac/Linuxならshell.openPathなど
+        const { path: finalPath, levels } = result;
+        if (levels > 0) {
+            dialog.showMessageBox({
+                type: "info",
+                message: `"${targetPath}" は存在しません。${levels} 階層上の "${finalPath}" を開きます。`,
+                buttons: ["OK"],
+            });
+        }
         if (process.platform === "win32") {
-            exec(`start \"\" \"${targetPath}\"`);
+            exec(`start \"\" \"${finalPath}\"`);
         } else {
-            shell.openPath(targetPath);
+            shell.openPath(finalPath);
         }
     });
 }
