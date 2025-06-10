@@ -234,12 +234,30 @@ function openClipboardPath(openParent) {
         if (!p) return; // 空文字はスキップ
 
         let targetPath = p;
+
+        const isHttpUrl = /^https?:\/\//i.test(targetPath);
+
         if (openParent) {
-            // スラッシュ/バックスラッシュの最後から後ろを切り落とし
-            targetPath = p.replace(/[\\\\/][^\\\\/]*$/, "");
+            if (isHttpUrl) {
+                try {
+                    const u = new URL(targetPath);
+                    u.pathname = u.pathname.replace(/\/[^/]*$/, "");
+                    targetPath = u.toString();
+                } catch (err) {
+                    // URL parsing failed, fall back to original
+                }
+            } else {
+                // スラッシュ/バックスラッシュの最後から後ろを切り落とし
+                targetPath = p.replace(/[\\\\/][^\\\\/]*$/, "");
+            }
         }
 
         if (!targetPath) return;
+
+        if (isHttpUrl) {
+            shell.openExternal(targetPath);
+            return;
+        }
 
         // 存在確認
         if (!fs.existsSync(targetPath)) {
