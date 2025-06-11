@@ -14,7 +14,8 @@
   "devDependencies": {
     "electron": "^34.1.1",
     "electron-builder": "^25.1.8",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.0.0"
   },
   "dependencies": {
     "electron-store": "^10.0.1"
