@@ -27,7 +27,8 @@ const store = new Store({
         openParentShortcut: "Ctrl+Shift+E",
         openAsSinglePath: false,
         trimSpaces: false,
-        removeList: "\""
+        removeList: "\"",
+        basePath: ""
     },
 });
 
@@ -208,7 +209,10 @@ function findExistingPath(targetPath) {
 }
 
 /**
- * クリップボード上のパスを解析し、(openParent=trueの場合)末尾ディレクトリを削除して開く
+ * Parse clipboard paths and open them. When a base path is configured, it will
+ * be prefixed to relative paths before lookup.
+ *
+ * @param {boolean} openParent - Open the parent directory or URL when true.
  */
 function openClipboardPath(openParent) {
     let text = clipboard.readText();
@@ -217,6 +221,7 @@ function openClipboardPath(openParent) {
     const openAsSinglePath = store.get("openAsSinglePath");
     const trimSpaces = store.get("trimSpaces");
     const removeList = store.get("removeList");
+    const basePath = store.get("basePath");
 
     // 前後の空白をトリム
     if (trimSpaces) {
@@ -255,7 +260,11 @@ function openClipboardPath(openParent) {
 
         let targetPath = p;
 
-        const isHttpUrl = /^https?:\/\//i.test(targetPath);
+        if (basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
+            targetPath = path.join(basePath, targetPath);
+        }
+
+        let isHttpUrl = /^https?:\/\//i.test(targetPath);
 
         if (openParent) {
             if (isHttpUrl) {
@@ -268,7 +277,7 @@ function openClipboardPath(openParent) {
                 }
             } else {
                 // スラッシュ/バックスラッシュの最後から後ろを切り落とし
-                targetPath = p.replace(/[\\\\/][^\\\\/]*$/, "");
+                targetPath = targetPath.replace(/[\\\\/][^\\\\/]*$/, "");
             }
         }
 

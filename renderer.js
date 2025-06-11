@@ -14,6 +14,8 @@
     const chkSinglePath = document.getElementById("chkSinglePath");
     const chkTrimSpaces = document.getElementById("chkTrimSpaces");
     const txtRemoveList = document.getElementById("txtRemoveList");
+    const txtBasePath = document.getElementById("txtBasePath");
+    const btnSetBasePath = document.getElementById("btnSetBasePath");
 
     const lblStartupStatus = document.getElementById("lblStartupStatus");
     const btnRegisterStartup = document.getElementById("btnRegisterStartup");
@@ -33,6 +35,7 @@
     chkSinglePath.checked = !!currentSettings.openAsSinglePath;
     chkTrimSpaces.checked = !!currentSettings.trimSpaces;
     txtRemoveList.value = currentSettings.removeList || "\"'<>＜＞[]{}";
+    txtBasePath.value = currentSettings.basePath || "";
 
     // スタートアップ登録をチェック
     try {
@@ -55,6 +58,9 @@
     });
     btnSetOpenParentShortcut.addEventListener("click", () => {
         updateSetting("openParentShortcut", txtOpenParentShortcut.value);
+    });
+    btnSetBasePath.addEventListener("click", () => {
+        updateSetting("basePath", txtBasePath.value);
     });
 
     chkSinglePath.addEventListener("change", () => {
