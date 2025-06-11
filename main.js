@@ -209,104 +209,123 @@ function findExistingPath(targetPath) {
 }
 
 /**
+ * Remove specified characters from the start and end of a string.
+ *
+ * @param {string} str - Target string.
+ * @param {string} chars - Characters to remove.
+ * @returns {string} Trimmed string.
+ */
+function trimChars(str, chars) {
+    let start = 0;
+    while (start < str.length && chars.includes(str[start])) {
+        start++;
+    }
+    let end = str.length - 1;
+    while (end >= start && chars.includes(str[end])) {
+        end--;
+    }
+    return str.substring(start, end + 1);
+}
+
+/**
+ * Format clipboard text into an array of paths.
+ *
+ * @param {string} text - Raw clipboard text.
+ * @param {boolean} asSingle - Treat text as a single path when true.
+ * @param {boolean} trimSpaces - Trim surrounding spaces.
+ * @param {string} removeList - Characters to strip from the ends.
+ * @returns {string[]} Sanitized paths.
+ */
+function formatClipboardText(text, asSingle, trimSpaces, removeList) {
+    if (trimSpaces) {
+        text = text.trim();
+    }
+    if (removeList) {
+        text = trimChars(text, removeList);
+    }
+    if (asSingle) {
+        return [text.replace(/\s*\r\s*/g, '').replace(/\s*\n\s*/g, '')];
+    }
+    return text.replace(/\r/g, '').split('\n');
+}
+
+/**
+ * Resolve and open a given path or URL.
+ *
+ * @param {string} inputPath - Path or URL to open.
+ * @param {boolean} openParent - Open the parent when true.
+ * @param {string} basePath - Prefix for relative paths.
+ */
+function openTargetPath(inputPath, openParent, basePath) {
+    let targetPath = inputPath;
+
+    if (basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
+        targetPath = path.join(basePath, targetPath);
+    }
+
+    const isHttpUrl = /^https?:\/\//i.test(targetPath);
+
+    if (openParent) {
+        if (isHttpUrl) {
+            try {
+                const u = new URL(targetPath);
+                u.pathname = u.pathname.replace(/\/[^/]*$/, '');
+                targetPath = u.toString();
+            } catch {
+                // ignore
+            }
+        } else {
+            targetPath = targetPath.replace(/[\\/][^\\/]*$/, '');
+        }
+    }
+
+    if (!targetPath) return;
+
+    if (isHttpUrl) {
+        shell.openExternal(targetPath);
+        return;
+    }
+
+    const result = findExistingPath(targetPath);
+    if (!result) {
+        dialog.showErrorBox('存在しないパス', `"${targetPath}" は存在しないパスです。`);
+        return;
+    }
+
+    const { path: finalPath, levels } = result;
+    if (levels > 0) {
+        dialog.showMessageBox({
+            type: 'info',
+            message: `"${targetPath}" は存在しません。${levels} 階層上の "${finalPath}" を開きます。`,
+            buttons: ['OK'],
+        });
+    }
+    if (process.platform === 'win32') {
+        exec(`start \"\" \"${finalPath}\"`);
+    } else {
+        shell.openPath(finalPath);
+    }
+}
+
+/**
  * Parse clipboard paths and open them. When a base path is configured, it will
  * be prefixed to relative paths before lookup.
  *
  * @param {boolean} openParent - Open the parent directory or URL when true.
  */
 function openClipboardPath(openParent) {
-    let text = clipboard.readText();
+    const text = clipboard.readText();
 
-    // 設定取得
     const openAsSinglePath = store.get("openAsSinglePath");
     const trimSpaces = store.get("trimSpaces");
     const removeList = store.get("removeList");
     const basePath = store.get("basePath");
 
-    // 前後の空白をトリム
-    if (trimSpaces) {
-        text = text.trim();
-    }
+    const paths = formatClipboardText(text, openAsSinglePath, trimSpaces, removeList);
 
-    // ユーザーが指定した文字(removeList)を先頭・末尾から除去
-    function trimSpecial(str, chars) {
-        let startIdx = 0;
-        while (startIdx < str.length && chars.includes(str[startIdx])) {
-            startIdx++;
-        }
-        let endIdx = str.length - 1;
-        while (endIdx >= 0 && chars.includes(str[endIdx])) {
-            endIdx--;
-        }
-        return str.substring(startIdx, endIdx + 1);
-    }
-    if (removeList) {
-        text = trimSpecial(text, removeList);
-    }
-
-    // 1つのパスとして開く or 改行区切りで複数開く
-    let paths = [];
-    if (openAsSinglePath) {
-        const singleLine = text.replace(/\s*\r\s*/g, "").replace(/\s*\n\s*/g, "");
-        paths = [singleLine];
-    } else {
-        const splitted = text.replace(/\r/g, "").split("\n");
-        paths = splitted.map((line) => line);
-    }
-
-    // 実際にパスを開く
     paths.forEach((p) => {
-        if (!p) return; // 空文字はスキップ
-
-        let targetPath = p;
-
-        if (basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
-            targetPath = path.join(basePath, targetPath);
-        }
-
-        let isHttpUrl = /^https?:\/\//i.test(targetPath);
-
-        if (openParent) {
-            if (isHttpUrl) {
-                try {
-                    const u = new URL(targetPath);
-                    u.pathname = u.pathname.replace(/\/[^/]*$/, "");
-                    targetPath = u.toString();
-                } catch (err) {
-                    // URL parsing failed, fall back to original
-                }
-            } else {
-                // スラッシュ/バックスラッシュの最後から後ろを切り落とし
-                targetPath = targetPath.replace(/[\\\\/][^\\\\/]*$/, "");
-            }
-        }
-
-        if (!targetPath) return;
-
-        if (isHttpUrl) {
-            shell.openExternal(targetPath);
-            return;
-        }
-
-        const result = findExistingPath(targetPath);
-        if (!result) {
-            dialog.showErrorBox("存在しないパス", `\"${targetPath}\" は存在しないパスです。`);
-            return;
-        }
-
-        const { path: finalPath, levels } = result;
-        if (levels > 0) {
-            dialog.showMessageBox({
-                type: "info",
-                message: `"${targetPath}" は存在しません。${levels} 階層上の "${finalPath}" を開きます。`,
-                buttons: ["OK"],
-            });
-        }
-        if (process.platform === "win32") {
-            exec(`start \"\" \"${finalPath}\"`);
-        } else {
-            shell.openPath(finalPath);
-        }
+        if (!p) return;
+        openTargetPath(p, openParent, basePath);
     });
 }
 
