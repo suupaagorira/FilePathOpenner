@@ -20,6 +20,7 @@
     const lblStartupStatus = document.getElementById("lblStartupStatus");
     const btnRegisterStartup = document.getElementById("btnRegisterStartup");
     const btnUnRegisterStartup = document.getElementById("btnUnRegisterStartup");
+    const divStartupLoading = document.getElementById("startupLoading");
 
     // Electronストアから現在の設定を読み出し
     let currentSettings = {};
@@ -77,11 +78,19 @@
 
     // スタートアップ登録ボタン
     btnRegisterStartup.addEventListener("click", async () => {
-        registerStartup();
-        // 再度チェック
-        const isRegistered = await checkStartup();
-        lblStartupStatus.innerText = isRegistered ? "する" : "しない";
-        lblStartupStatus.style.color = isRegistered ? "green" : "red";
+        btnRegisterStartup.disabled = true;
+        divStartupLoading.style.display = "block";
+        try {
+            registerStartup();
+            const isRegistered = await checkStartup();
+            lblStartupStatus.innerText = isRegistered ? "する" : "しない";
+            lblStartupStatus.style.color = isRegistered ? "green" : "red";
+        } catch (err) {
+            console.error("スタートアップ登録エラー:", err);
+        } finally {
+            divStartupLoading.style.display = "none";
+            btnRegisterStartup.disabled = false;
+        }
     });
     // スタートアップ削除ボタン
     btnUnRegisterStartup.addEventListener("click", async () => {
