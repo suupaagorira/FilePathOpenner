@@ -96,6 +96,30 @@ describe('main.js utilities', () => {
     expect(dialog.showErrorBox).toHaveBeenCalled();
   });
 
+  test('openClipboardPath prefixes base path for relative path', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.basePath = '/home';
+    clipboard.readText.mockReturnValue('docs/file.txt');
+    fs.existsSync.mockReturnValue(true);
+    openClipboardPath(false);
+    expect(shell.openPath).toHaveBeenCalledWith('/home/docs/file.txt');
+  });
+
+  test('openClipboardPath parent with base path', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.basePath = '/home';
+    clipboard.readText.mockReturnValue('docs/file.txt');
+    fs.existsSync.mockReturnValue(true);
+    openClipboardPath(true);
+    expect(shell.openPath).toHaveBeenCalledWith('/home/docs');
+  });
+
   test('checkIfStartupRegistered returns true when shortcut exists', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     process.env.APPDATA = '/home';
