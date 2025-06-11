@@ -17,7 +17,7 @@ import {
 } from "electron";
 import path from "path";
 import fs from "fs";
-import { exec, execFile } from "child_process";
+import { execFile } from "child_process";
 import Store from "electron-store";
 
 // electron-storeで設定を永続化
@@ -302,11 +302,7 @@ function openClipboardPath(openParent) {
                 buttons: ["OK"],
             });
         }
-        if (process.platform === "win32") {
-            exec(`start \"\" \"${finalPath}\"`);
-        } else {
-            shell.openPath(finalPath);
-        }
+        shell.openPath(finalPath);
     });
 }
 

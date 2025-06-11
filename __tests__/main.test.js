@@ -5,7 +5,7 @@ jest.unstable_mockModule('fs', () => ({
     unlink: jest.fn(),
   },
 }));
-jest.unstable_mockModule('child_process', () => ({ exec: jest.fn(), execFile: jest.fn() }));
+jest.unstable_mockModule('child_process', () => ({ execFile: jest.fn() }));
 
 const storeData = {};
 const getMock = jest.fn(key => storeData[key]);
@@ -34,7 +34,6 @@ const electronMock = {
 jest.unstable_mockModule('electron', () => electronMock);
 
 const fs = (await import('fs')).default;
-const { exec } = await import('child_process');
 const { openClipboardPath, checkIfStartupRegistered, unRegisterStartupShortcut } = await import('../main.js');
 const { clipboard, shell, dialog } = electronMock;
 
@@ -57,7 +56,7 @@ describe('main.js utilities', () => {
     clipboard.readText.mockReturnValue('  C:\\Temp  ');
     fs.existsSync.mockReturnValue(true);
     openClipboardPath(false);
-    expect(exec).toHaveBeenCalledWith('start "" "C:\\Temp"');
+    expect(shell.openPath).toHaveBeenCalledWith('C:\\Temp');
   });
 
   test('openClipboardPath opens parent url', () => {
