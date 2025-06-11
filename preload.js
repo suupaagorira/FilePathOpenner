@@ -2,7 +2,7 @@
 // レンダラープロセス(ブラウザWindow)とメインプロセスを安全にやりとりするため
 // (contextIsolation: true の場合、ここで contextBridge を使う)
 
-const { contextBridge, ipcRenderer } = require("electron");
+import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("electronAPI", {
     // 設定を更新して同期的に応答を受け取る
