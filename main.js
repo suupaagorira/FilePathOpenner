@@ -36,8 +36,12 @@ let mainWindow = null;
 let tray = null;
 
 /**
- * Windowsスタートアップフォルダにショートカットを作成
- * (Windows以外では動作しません)
+ * Create a shortcut in the Windows startup folder so the app launches on login.
+ *
+ * This function has no effect on platforms other than Windows.
+ *
+ * @returns {void}
+ * @throws No exceptions are thrown; failures are shown in an error dialog.
  */
 function registerStartupShortcut() {
     if (process.platform !== "win32") return;
@@ -81,8 +85,12 @@ function registerStartupShortcut() {
 }
 
 /**
- * スタートアップにショートカットが存在するかチェック
- * (Windows以外では常に false)
+ * Determine whether a startup shortcut already exists.
+ *
+ * On platforms other than Windows this always returns `false`.
+ *
+ * @returns {boolean} `true` when the shortcut file exists.
+ * @throws No exceptions are thrown.
  */
 function checkIfStartupRegistered() {
     if (process.platform !== "win32") return false;
@@ -101,8 +109,12 @@ function checkIfStartupRegistered() {
 }
 
 /**
- * スタートアップフォルダのショートカットを削除
- * (Windows以外では何もしない)
+ * Remove the startup shortcut from the Windows startup folder.
+ *
+ * This function does nothing on non-Windows platforms.
+ *
+ * @returns {void}
+ * @throws No exceptions are thrown; failures are shown in an error dialog.
  */
 function unRegisterStartupShortcut() {
     if (process.platform !== "win32") return;
@@ -209,10 +221,12 @@ function findExistingPath(targetPath) {
 }
 
 /**
- * Parse clipboard paths and open them. When a base path is configured, it will
- * be prefixed to relative paths before lookup.
+ * Parse clipboard text and open the referenced file paths or URLs.
+ * When a base path is configured, it is prefixed to relative paths before lookup.
  *
- * @param {boolean} openParent - Open the parent directory or URL when true.
+ * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
+ * @returns {void}
+ * @throws No exceptions are thrown; invalid paths trigger error dialogs.
  */
 function openClipboardPath(openParent) {
     let text = clipboard.readText();
