@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import path from 'path';
 jest.unstable_mockModule('fs', () => ({
   default: {
     existsSync: jest.fn(),
@@ -34,7 +35,7 @@ const electronMock = {
 jest.unstable_mockModule('electron', () => electronMock);
 
 const fs = (await import('fs')).default;
-const { openClipboardPath, checkIfStartupRegistered, unRegisterStartupShortcut } = await import('../main.js');
+const { openClipboardPath, checkIfStartupRegistered, unRegisterStartupShortcut, applyPrefixRules } = await import('../main.js');
 const { clipboard, shell, dialog } = electronMock;
 
 describe('main.js utilities', () => {
@@ -104,7 +105,7 @@ describe('main.js utilities', () => {
     clipboard.readText.mockReturnValue('docs/file.txt');
     fs.existsSync.mockReturnValue(true);
     openClipboardPath(false);
-    expect(shell.openPath).toHaveBeenCalledWith('/home/docs/file.txt');
+    expect(shell.openPath).toHaveBeenCalledWith(path.join('/home', 'docs/file.txt'));
   });
 
   test('openClipboardPath parent with base path', () => {
@@ -116,7 +117,130 @@ describe('main.js utilities', () => {
     clipboard.readText.mockReturnValue('docs/file.txt');
     fs.existsSync.mockReturnValue(true);
     openClipboardPath(true);
-    expect(shell.openPath).toHaveBeenCalledWith('/home/docs');
+    expect(shell.openPath).toHaveBeenCalledWith(path.join('/home', 'docs'));
+  });
+
+  test('applyPrefixRules combines base with matched text', () => {
+    const rules = [{ prefix: 'DOC-', base: 'https://intra/docs/', stripPrefix: false }];
+    expect(applyPrefixRules('DOC-123', rules)).toEqual({
+      target: 'https://intra/docs/DOC-123',
+      matched: true,
+    });
+  });
+
+  test('applyPrefixRules strips prefix when requested', () => {
+    const rules = [{ prefix: 'id:', base: 'https://intra/view?id=', stripPrefix: true }];
+    expect(applyPrefixRules('id:42', rules)).toEqual({
+      target: 'https://intra/view?id=42',
+      matched: true,
+    });
+  });
+
+  test('applyPrefixRules returns unmatched when no rule applies', () => {
+    expect(applyPrefixRules('plain', [{ prefix: 'X', base: 'Y' }])).toEqual({
+      target: 'plain',
+      matched: false,
+    });
+    expect(applyPrefixRules('plain', undefined)).toEqual({ target: 'plain', matched: false });
+  });
+
+  test('applyPrefixRules skips http URLs and absolute paths', () => {
+    const rules = [
+      { prefix: 'http', base: 'https://mirror/' },
+      { prefix: 'C:', base: 'X' },
+      { prefix: '/home', base: 'Y' },
+    ];
+    expect(applyPrefixRules('https://example.com', rules)).toEqual({
+      target: 'https://example.com',
+      matched: false,
+    });
+    expect(applyPrefixRules('C:\\Users\\file.txt', rules)).toEqual({
+      target: 'C:\\Users\\file.txt',
+      matched: false,
+    });
+    expect(applyPrefixRules('/home/file.txt', rules)).toEqual({
+      target: '/home/file.txt',
+      matched: false,
+    });
+  });
+
+  test('openClipboardPath opens URL built from prefix rule', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.prefixRules = [{ prefix: 'DOC-', base: 'https://intra/docs/', stripPrefix: false }];
+    clipboard.readText.mockReturnValue('DOC-123');
+    openClipboardPath(false);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://intra/docs/DOC-123');
+  });
+
+  test('openClipboardPath opens shared folder built from prefix rule', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.prefixRules = [{ prefix: '案件', base: '\\\\server\\share\\', stripPrefix: false }];
+    clipboard.readText.mockReturnValue('案件A\\資料');
+    fs.existsSync.mockReturnValue(true);
+    openClipboardPath(false);
+    expect(shell.openPath).toHaveBeenCalledWith('\\\\server\\share\\案件A\\資料');
+  });
+
+  test('openClipboardPath prefix rule takes precedence over base path', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.basePath = '/home';
+    storeData.prefixRules = [{ prefix: 'g/', base: 'https://g/', stripPrefix: true }];
+    clipboard.readText.mockReturnValue('g/page');
+    openClipboardPath(false);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://g/page');
+  });
+
+  test('openClipboardPath does not rewrite existing URL via prefix rule', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.prefixRules = [{ prefix: 'http', base: 'https://mirror/' }];
+    clipboard.readText.mockReturnValue('https://example.com/page');
+    openClipboardPath(false);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/page');
+  });
+
+  test('openClipboardPath opens parent URL built from prefix rule', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    storeData.prefixRules = [{ prefix: 'DOC-', base: 'https://intra/docs/', stripPrefix: false }];
+    clipboard.readText.mockReturnValue('DOC-123');
+    openClipboardPath(true);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://intra/docs');
+  });
+
+  test('openClipboardPath applies prefix rule after trimSpaces', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = true;
+    storeData.removeList = '';
+    storeData.prefixRules = [{ prefix: 'DOC-', base: 'https://intra/docs/', stripPrefix: false }];
+    clipboard.readText.mockReturnValue('  DOC-123  ');
+    openClipboardPath(false);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://intra/docs/DOC-123');
+  });
+
+  test('openClipboardPath applies prefix rule after removeList trimming', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '"';
+    storeData.prefixRules = [{ prefix: 'DOC-', base: 'https://intra/docs/', stripPrefix: false }];
+    clipboard.readText.mockReturnValue('"DOC-123"');
+    openClipboardPath(false);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://intra/docs/DOC-123');
   });
 
   test('checkIfStartupRegistered returns true when shortcut exists', () => {
