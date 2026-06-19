@@ -17,6 +17,9 @@
     const txtBasePath = document.getElementById("txtBasePath");
     const btnSetBasePath = document.getElementById("btnSetBasePath");
 
+    const prefixRulesContainer = document.getElementById("prefixRulesContainer");
+    const btnAddPrefixRule = document.getElementById("btnAddPrefixRule");
+
     const lblStartupStatus = document.getElementById("lblStartupStatus");
     const btnRegisterStartup = document.getElementById("btnRegisterStartup");
     const btnUnRegisterStartup = document.getElementById("btnUnRegisterStartup");
@@ -63,6 +66,103 @@
     btnSetBasePath.addEventListener("click", () => {
         updateSetting("basePath", txtBasePath.value);
     });
+
+    // --- プレフィックス判定ルール ---
+    let prefixRules = Array.isArray(currentSettings.prefixRules)
+        ? currentSettings.prefixRules
+        : [];
+
+    /**
+     * Persist the current prefix rule list to the main process.
+     *
+     * @returns {void}
+     */
+    const savePrefixRules = () => {
+        updateSetting("prefixRules", prefixRules);
+    };
+
+    /**
+     * Build a single editable prefix-rule row element.
+     *
+     * @param {{prefix: string, base: string, stripPrefix?: boolean}} rule - The rule data.
+     * @param {number} index - Index of the rule within the list.
+     * @returns {HTMLDivElement} The row element.
+     */
+    const buildRuleRow = (rule, index) => {
+        const row = document.createElement("div");
+        row.className = "prefix-rule";
+
+        const prefixInput = document.createElement("input");
+        prefixInput.type = "text";
+        prefixInput.className = "rule-prefix";
+        prefixInput.placeholder = "先頭パターン (例: DOC-)";
+        prefixInput.value = rule.prefix || "";
+        prefixInput.addEventListener("input", () => {
+            prefixRules[index].prefix = prefixInput.value;
+        });
+        prefixInput.addEventListener("blur", savePrefixRules);
+
+        const baseInput = document.createElement("input");
+        baseInput.type = "text";
+        baseInput.className = "rule-base";
+        baseInput.placeholder = "結合する文字列 (URL / 共有フォルダ等)";
+        baseInput.value = rule.base || "";
+        baseInput.addEventListener("input", () => {
+            prefixRules[index].base = baseInput.value;
+        });
+        baseInput.addEventListener("blur", savePrefixRules);
+
+        const stripLabel = document.createElement("label");
+        stripLabel.className = "rule-strip";
+        const stripChk = document.createElement("input");
+        stripChk.type = "checkbox";
+        stripChk.checked = !!rule.stripPrefix;
+        stripChk.addEventListener("change", () => {
+            prefixRules[index].stripPrefix = stripChk.checked;
+            savePrefixRules();
+        });
+        stripLabel.appendChild(stripChk);
+        stripLabel.appendChild(document.createTextNode("パターンを除去"));
+
+        const delBtn = document.createElement("button");
+        delBtn.className = "rule-delete";
+        delBtn.innerText = "削除";
+        delBtn.addEventListener("click", () => {
+            prefixRules.splice(index, 1);
+            savePrefixRules();
+            renderPrefixRules();
+        });
+
+        row.append(prefixInput, baseInput, stripLabel, delBtn);
+        return row;
+    };
+
+    /**
+     * Re-render the whole prefix-rule list from the current state.
+     *
+     * @returns {void}
+     */
+    function renderPrefixRules() {
+        prefixRulesContainer.innerHTML = "";
+        if (prefixRules.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "prefix-rule-empty";
+            empty.innerText = "ルールがありません。「ルールを追加」で作成してください。";
+            prefixRulesContainer.appendChild(empty);
+            return;
+        }
+        prefixRules.forEach((rule, index) => {
+            prefixRulesContainer.appendChild(buildRuleRow(rule, index));
+        });
+    }
+
+    btnAddPrefixRule.addEventListener("click", () => {
+        prefixRules.push({ prefix: "", base: "", stripPrefix: false });
+        savePrefixRules();
+        renderPrefixRules();
+    });
+
+    renderPrefixRules();
 
     chkSinglePath.addEventListener("change", () => {
         updateSetting("openAsSinglePath", chkSinglePath.checked);
