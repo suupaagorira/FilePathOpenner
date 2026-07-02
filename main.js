@@ -28,7 +28,8 @@ const store = new Store({
         openAsSinglePath: false,
         trimSpaces: false,
         removeList: "\"",
-        basePath: ""
+        basePath: "",
+        prefixRules: []
     },
 });
 
@@ -221,8 +222,41 @@ function findExistingPath(targetPath) {
 }
 
 /**
+ * Match clipboard text against configured prefix rules and build the access target.
+ *
+ * Rules are evaluated in order; the first rule whose `prefix` matches the start of
+ * `text` is applied. Already absolute paths and `http(s)://` URLs are left unchanged.
+ * The rule's `base` string is concatenated with the text to form the URL or shared-folder
+ * target. When `stripPrefix` is `true` the matched prefix is removed from the text before
+ * concatenation, so only the discriminating part remains.
+ *
+ * @param {string} text - A cleaned clipboard line.
+ * @param {Array<{prefix: string, base: string, stripPrefix?: boolean}>} rules - Configured rules.
+ * @returns {{target: string, matched: boolean}} The combined target and whether a rule matched.
+ * @throws No exceptions are thrown.
+ */
+function applyPrefixRules(text, rules) {
+    if (!Array.isArray(rules)) {
+        return { target: text, matched: false };
+    }
+    if (/^https?:\/\//i.test(text) || path.isAbsolute(text)) {
+        return { target: text, matched: false };
+    }
+    for (const rule of rules) {
+        if (!rule || !rule.prefix) continue;
+        if (text.startsWith(rule.prefix)) {
+            const body = rule.stripPrefix ? text.slice(rule.prefix.length) : text;
+            return { target: (rule.base || "") + body, matched: true };
+        }
+    }
+    return { target: text, matched: false };
+}
+
+/**
  * Parse clipboard text and open the referenced file paths or URLs.
- * When a base path is configured, it is prefixed to relative paths before lookup.
+ * When a clipboard line starts with a configured prefix rule, it is treated as the
+ * discriminating part of a URL or shared folder and combined with the rule's base
+ * string. Otherwise, when a base path is configured it is prefixed to relative paths.
  *
  * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
  * @returns {void}
@@ -236,6 +270,7 @@ function openClipboardPath(openParent) {
     const trimSpaces = store.get("trimSpaces");
     const removeList = store.get("removeList");
     const basePath = store.get("basePath");
+    const prefixRules = store.get("prefixRules");
 
     // 前後の空白をトリム
     if (trimSpaces) {
@@ -274,7 +309,11 @@ function openClipboardPath(openParent) {
 
         let targetPath = p;
 
-        if (basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
+        // 設定済みのプレフィックスルールにマッチする場合は、結合結果を優先して使う
+        const ruleResult = applyPrefixRules(p, prefixRules);
+        if (ruleResult.matched) {
+            targetPath = ruleResult.target;
+        } else if (basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
             targetPath = path.join(basePath, targetPath);
         }
 
@@ -398,4 +437,5 @@ export {
     checkIfStartupRegistered,
     unRegisterStartupShortcut,
     openClipboardPath,
+    applyPrefixRules,
 };

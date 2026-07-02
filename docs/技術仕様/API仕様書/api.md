@@ -44,11 +44,18 @@
 - `checkIfStartupRegistered()`
 - `unRegisterStartupShortcut()`
 - `openClipboardPath(openParent)`
+- `applyPrefixRules(text, rules)`
 
 `openClipboardPath` は次のオプションに基づいて動作します:
 - `openAsSinglePath` (true の場合は改行を連結)
 - `trimSpaces` (true の場合は trim)
 - `removeList` (カスタムの除去文字リスト)
 - `basePath` (相対パスに前提となるパスを付与)
+- `prefixRules` (先頭パターン一致時に結合して開くルール配列)
+
+`applyPrefixRules(text, rules)` は、クリップボードの 1 行 `text` を `rules`（`{ prefix, base, stripPrefix }` の配列）と先頭一致で照合します。
+`http(s)://` で始まる URL や `path.isAbsolute` で絶対パスと判定される文字列にはルールを適用せず、`{ target: text, matched: false }` を返します。
+最初にマッチしたルールについて、`stripPrefix` が `true` なら先頭パターンを取り除いた残りを、そうでなければ `text` 全体を `base` と連結し、`{ target, matched: true }` を返します。
+どのルールにもマッチしない場合は `{ target: text, matched: false }` を返します。`openClipboardPath` 内ではこの結果が `matched` のとき `basePath` の付加より優先されます。
 
 以上がメインで使われている API の一覧と契約（引数、戻り値）になります。必要に応じて追加の IPC チャンネルを設けることができます（ロギング、アップデートなど）。
