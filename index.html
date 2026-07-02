@@ -39,7 +39,7 @@
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             width: 100%;
-            max-width: 600px;
+            max-width: 720px;
             padding: 32px;
         }
 
@@ -126,6 +126,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 12px;
             margin-bottom: 8px;
         }
 
@@ -136,57 +137,137 @@
         .section-desc {
             font-size: 12px;
             color: #bbb;
-            margin: 0 0 8px;
+            margin: 0 0 4px;
             line-height: 1.5;
+        }
+
+        .section-hint {
+            font-size: 11px;
+            color: #888;
+            margin: 0 0 12px;
+            line-height: 1.4;
         }
 
         #prefixRulesContainer {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 12px;
         }
 
-        .prefix-rule {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .prefix-rule-card {
             background-color: rgba(255, 255, 255, 0.04);
             border: 1px solid #444;
-            border-radius: 6px;
-            padding: 8px;
+            border-radius: 8px;
+            padding: 12px 14px;
         }
 
-        .prefix-rule input.rule-prefix {
-            flex: 0 0 130px;
+        .prefix-rule-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
 
-        .prefix-rule input.rule-base {
-            flex: 1;
+        .prefix-rule-number {
+            font-size: 13px;
+            font-weight: 700;
+            color: #ffd700;
         }
 
-        .prefix-rule .rule-strip {
-            flex: 0 0 auto;
+        .prefix-rule-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .prefix-rule-actions button {
+            margin-left: 0;
+            padding: 4px 10px;
+            font-size: 12px;
+            min-width: 32px;
+        }
+
+        .prefix-rule-actions button.rule-move {
+            background-color: #555;
+            color: #eee;
+        }
+
+        .prefix-rule-actions button.rule-move:hover:not(:disabled) {
+            background-color: #666;
+        }
+
+        .prefix-rule-actions button.rule-move:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .prefix-rule-actions button.rule-delete {
+            background-color: #e06666;
+            color: #fff;
+        }
+
+        .prefix-rule-actions button.rule-delete:hover {
+            background-color: #d35454;
+        }
+
+        .prefix-rule-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+
+        .prefix-rule-field:last-of-type {
+            margin-bottom: 0;
+        }
+
+        .prefix-rule-field > label {
+            flex: none;
+            font-size: 12px;
+            font-weight: 600;
+            color: #ccc;
+            margin-right: 0;
+        }
+
+        .prefix-rule-field input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .prefix-rule-options {
+            margin: 8px 0 10px;
+        }
+
+        .prefix-rule-options label.rule-strip {
+            flex: none;
             font-weight: 400;
             font-size: 12px;
             display: flex;
             align-items: center;
-            white-space: nowrap;
+            gap: 6px;
+            cursor: pointer;
+            margin-right: 0;
         }
 
-        .prefix-rule button.rule-delete {
-            background-color: #e06666;
-            color: #fff;
-            margin-left: 0;
-        }
-
-        .prefix-rule button.rule-delete:hover {
-            background-color: #d35454;
+        .prefix-rule-preview {
+            font-size: 11px;
+            color: #9ab;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            padding: 6px 8px;
+            line-height: 1.5;
+            word-break: break-all;
         }
 
         .prefix-rule-empty {
             font-size: 12px;
             color: #999;
-            padding: 4px 0;
+            padding: 12px;
+            text-align: center;
+            border: 1px dashed #555;
+            border-radius: 8px;
         }
     </style>
 </head>
@@ -239,10 +320,10 @@
                     <button id="btnAddPrefixRule">ルールを追加</button>
                 </div>
                 <p class="section-desc">
-                    コピーした文字列が「先頭パターン」で始まるとき、その文字列を URL や共有フォルダの判別パス部とみなし、
-                    「結合する文字列」と連結して開きます。例: 先頭パターン <code>DOC-</code> ／ 結合する文字列
-                    <code>https://intra/docs/</code> → <code>DOC-123</code> をコピーすると
-                    <code>https://intra/docs/DOC-123</code> を開きます。
+                    コピーした文字列が「先頭パターン」で始まるとき、「結合文字列」と連結して URL や共有フォルダを開きます。
+                </p>
+                <p class="section-hint">
+                    ルールは上から順に評価され、最初に一致したものが適用されます（前提パスより優先）。
                 </p>
                 <div id="prefixRulesContainer"></div>
             </div>

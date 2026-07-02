@@ -72,12 +72,13 @@ test('renders existing prefix rules and adds a new one', async () => {
     await Promise.resolve();
 
     const container = document.getElementById('prefixRulesContainer');
-    expect(container.querySelectorAll('.prefix-rule').length).toBe(1);
+    expect(container.querySelectorAll('.prefix-rule-card').length).toBe(1);
     expect(container.querySelector('.rule-prefix').value).toBe('DOC-');
     expect(container.querySelector('.rule-base').value).toBe('https://intra/docs/');
+    expect(container.querySelector('.prefix-rule-preview').innerText).toContain('DOC-123');
 
     document.getElementById('btnAddPrefixRule').click();
-    expect(container.querySelectorAll('.prefix-rule').length).toBe(2);
+    expect(container.querySelectorAll('.prefix-rule-card').length).toBe(2);
 
     const lastCall = updateSettings.mock.calls[updateSettings.mock.calls.length - 1][0];
     expect(lastCall.prefixRules.length).toBe(2);
@@ -105,7 +106,7 @@ test('deletes a prefix rule', async () => {
     container.querySelector('.rule-delete').click();
     await Promise.resolve();
 
-    expect(container.querySelectorAll('.prefix-rule').length).toBe(0);
+    expect(container.querySelectorAll('.prefix-rule-card').length).toBe(0);
     expect(container.querySelector('.prefix-rule-empty')).not.toBeNull();
     const lastCall = updateSettings.mock.calls[updateSettings.mock.calls.length - 1][0];
     expect(lastCall.prefixRules).toEqual([]);
@@ -136,4 +137,42 @@ test('toggle stripPrefix saves setting', async () => {
 
     const lastCall = updateSettings.mock.calls[updateSettings.mock.calls.length - 1][0];
     expect(lastCall.prefixRules[0].stripPrefix).toBe(true);
+});
+
+test('reorders prefix rules with move buttons', async () => {
+    jest.resetModules();
+    const updateSettings = jest.fn();
+    const getSettings = jest.fn().mockResolvedValue({
+        prefixRules: [
+            { prefix: 'A-', base: 'https://a/', stripPrefix: false },
+            { prefix: 'B-', base: 'https://b/', stripPrefix: false },
+        ],
+    });
+    window.electronAPI = {
+        updateSettings,
+        registerStartup: jest.fn(),
+        checkStartup: jest.fn().mockResolvedValue(false),
+        unRegisterStartup: jest.fn(),
+        getSettings,
+    };
+
+    await import('../renderer.js');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const container = document.getElementById('prefixRulesContainer');
+    const cards = container.querySelectorAll('.prefix-rule-card');
+    expect(cards.length).toBe(2);
+    expect(cards[0].querySelector('.rule-prefix').value).toBe('A-');
+
+    cards[1].querySelector('.rule-move').click();
+    await Promise.resolve();
+
+    const reordered = container.querySelectorAll('.prefix-rule-card');
+    expect(reordered[0].querySelector('.rule-prefix').value).toBe('B-');
+    expect(reordered[1].querySelector('.rule-prefix').value).toBe('A-');
+
+    const lastCall = updateSettings.mock.calls[updateSettings.mock.calls.length - 1][0];
+    expect(lastCall.prefixRules[0].prefix).toBe('B-');
+    expect(lastCall.prefixRules[1].prefix).toBe('A-');
 });
