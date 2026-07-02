@@ -39,7 +39,7 @@
 
     /**
      * Build an in-memory API stub so the page can be previewed in a plain browser.
-     * 実アプリでは preload.js が window.electronAPI を提供するため使われない。
+     * 実アプリでは preload.cjs が window.electronAPI を提供するため使われない。
      *
      * @returns {object} A mock implementation of the electronAPI surface.
      */

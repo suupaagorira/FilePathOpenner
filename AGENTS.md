@@ -5,6 +5,9 @@ This repository is an Electron application written in JavaScript (ES modules). T
 ## Coding style
 
 - Use **ES module** syntax (`import`/`export`) for all JS files.
+  - **Exception:** `preload.cjs` must stay **CommonJS** (`require`). Sandboxed Electron preload
+    scripts cannot use ESM; converting it to `import`/`export` silently breaks `window.electronAPI`
+    (this regression happened once before). Do not rename it back to `.js` or switch it to ESM.
 - Indent with **4 spaces** and terminate statements with semicolons.
 - Keep line length under **120 characters**.
 - Document exported functions with **JSDoc** style comments in English.
