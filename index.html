@@ -3,340 +3,360 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>FilePathOpenner 設定</title>
-    <style>
-        /* 画面全体をウィンドウ幅に合わせて可変表示（Electronのウィンドウ設定でサイズを合わせる想定） */
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            min-height: 100%;
-            font-family: 'Noto Sans JP', sans-serif;
-            /* 好みのフォントに変更可能 */
-            background: linear-gradient(135deg, #1a1a1a, #2b2b2b);
-            color: #f0f0f0;
-            box-sizing: border-box;
-        }
-
-        /* 全体コンテナ */
-        .container {
-            width: 100%;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 24px;
-            box-sizing: border-box;
-        }
-
-        /* コンテンツをまとめるボックス */
-        .content-box {
-            background-color: rgba(255, 255, 255, 0.06);
-            backdrop-filter: blur(8px);
-            /* 対応ブラウザでガラス風を演出 */
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-            width: 100%;
-            max-width: 720px;
-            padding: 32px;
-        }
-
-        /* タイトル */
-        h1 {
-            text-align: center;
-            margin-bottom: 24px;
-            color: #ffd700;
-            /* ゴールドをアクセントに */
-        }
-
-        /* 各入力項目のラッパ */
-        .row {
-            display: flex;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-
-        /* ラベル */
-        label {
-            flex: 0 0 220px;
-            /* ラベル部分の固定幅 */
-            margin-right: 8px;
-            font-weight: 700;
-        }
-
-        /* テキストボックス */
-        input[type="text"] {
-            flex: 1;
-            padding: 8px;
-            border: 1px solid #555;
-            border-radius: 4px;
-            background-color: #333;
-            color: #fff;
-            outline: none;
-        }
-
-        /* チェックボックス */
-        input[type="checkbox"] {
-            transform: scale(1.2);
-            margin-right: 8px;
-            accent-color: #ffd700;
-            /* ゴールドカラーに */
-            cursor: pointer;
-        }
-
-        /* ボタン共通 */
-        button {
-            padding: 8px 16px;
-            margin-left: 8px;
-            border: none;
-            border-radius: 4px;
-            background-color: #ffd700;
-            color: #333;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background-color 0.3s, transform 0.2s;
-        }
-
-        button:hover {
-            background-color: #ffc800;
-            transform: translateY(-1px);
-        }
-
-        /* スタートアップ状態表示 */
-        #lblStartupStatus {
-            margin-right: 8px;
-            font-weight: 600;
-        }
-
-        #startupLoading {
-            display: none;
-            margin-top: 8px;
-            font-weight: 600;
-            color: #ffd700;
-        }
-
-        /* プレフィックス判定ルール */
-        .section-block {
-            margin-bottom: 16px;
-        }
-
-        .section-block > .section-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 8px;
-        }
-
-        .section-block > .section-head > .section-title {
-            font-weight: 700;
-        }
-
-        .section-desc {
-            font-size: 12px;
-            color: #bbb;
-            margin: 0 0 4px;
-            line-height: 1.5;
-        }
-
-        .section-hint {
-            font-size: 11px;
-            color: #888;
-            margin: 0 0 12px;
-            line-height: 1.4;
-        }
-
-        #prefixRulesContainer {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .prefix-rule-card {
-            background-color: rgba(255, 255, 255, 0.04);
-            border: 1px solid #444;
-            border-radius: 8px;
-            padding: 12px 14px;
-        }
-
-        .prefix-rule-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .prefix-rule-number {
-            font-size: 13px;
-            font-weight: 700;
-            color: #ffd700;
-        }
-
-        .prefix-rule-actions {
-            display: flex;
-            gap: 4px;
-        }
-
-        .prefix-rule-actions button {
-            margin-left: 0;
-            padding: 4px 10px;
-            font-size: 12px;
-            min-width: 32px;
-        }
-
-        .prefix-rule-actions button.rule-move {
-            background-color: #555;
-            color: #eee;
-        }
-
-        .prefix-rule-actions button.rule-move:hover:not(:disabled) {
-            background-color: #666;
-        }
-
-        .prefix-rule-actions button.rule-move:disabled {
-            opacity: 0.35;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .prefix-rule-actions button.rule-delete {
-            background-color: #e06666;
-            color: #fff;
-        }
-
-        .prefix-rule-actions button.rule-delete:hover {
-            background-color: #d35454;
-        }
-
-        .prefix-rule-field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            margin-bottom: 10px;
-        }
-
-        .prefix-rule-field:last-of-type {
-            margin-bottom: 0;
-        }
-
-        .prefix-rule-field > label {
-            flex: none;
-            font-size: 12px;
-            font-weight: 600;
-            color: #ccc;
-            margin-right: 0;
-        }
-
-        .prefix-rule-field input[type="text"] {
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .prefix-rule-options {
-            margin: 8px 0 10px;
-        }
-
-        .prefix-rule-options label.rule-strip {
-            flex: none;
-            font-weight: 400;
-            font-size: 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-            margin-right: 0;
-        }
-
-        .prefix-rule-preview {
-            font-size: 11px;
-            color: #9ab;
-            background-color: rgba(0, 0, 0, 0.2);
-            border-radius: 4px;
-            padding: 6px 8px;
-            line-height: 1.5;
-            word-break: break-all;
-        }
-
-        .prefix-rule-empty {
-            font-size: 12px;
-            color: #999;
-            padding: 12px;
-            text-align: center;
-            border: 1px dashed #555;
-            border-radius: 8px;
-        }
-    </style>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;" />
+    <title>FilePathOpenner</title>
+    <link rel="stylesheet" href="styles.css" />
 </head>
 
 <body>
-    <div class="container">
-        <div class="content-box">
-            <h1>FilePathOpenner 設定</h1>
-
-            <div class="row">
-                <label for="txtOpenShortcut">クリップボードのパスを開く:</label>
-                <input type="text" id="txtOpenShortcut" />
-                <button id="btnSetOpenShortcut">設定</button>
-            </div>
-
-            <div class="row">
-                <label for="txtOpenParentShortcut">1階層上ディレクトリを開く:</label>
-                <input type="text" id="txtOpenParentShortcut" />
-                <button id="btnSetOpenParentShortcut">設定</button>
-            </div>
-
-            <div class="row">
-                <label for="chkSinglePath">
-                    <input type="checkbox" id="chkSinglePath" />
-                    1つのパスとして開く
-                </label>
-            </div>
-
-            <div class="row">
-                <label for="chkTrimSpaces">
-                    <input type="checkbox" id="chkTrimSpaces" />
-                    文字列の前後にある空白文字を削除
-                </label>
-            </div>
-
-            <div class="row">
-                <label for="txtRemoveList">文章の前後から除去する文字リスト:</label>
-                <input type="text" id="txtRemoveList" style="width:200px;" />
-            </div>
-
-            <div class="row">
-                <label for="txtBasePath">前提パス:</label>
-                <input type="text" id="txtBasePath" style="width:400px;" />
-                <button id="btnSetBasePath">設定</button>
-            </div>
-
-            <div class="section-block">
-                <div class="section-head">
-                    <span class="section-title">プレフィックス判定ルール:</span>
-                    <button id="btnAddPrefixRule">ルールを追加</button>
-                </div>
-                <p class="section-desc">
-                    コピーした文字列が「先頭パターン」で始まるとき、「結合文字列」と連結して URL や共有フォルダを開きます。
-                </p>
-                <p class="section-hint">
-                    ルールは上から順に評価され、最初に一致したものが適用されます（前提パスより優先）。
-                </p>
-                <div id="prefixRulesContainer"></div>
-            </div>
-
-            <div class="row">
-                <label>PC起動時にアプリケーションを起動:</label>
-                <span id="lblStartupStatus"></span>
-                <button id="btnRegisterStartup">登録する</button>
-                <button id="btnUnRegisterStartup">解除する</button>
-            </div>
-            <div id="startupLoading">スタートアップ登録処理中...</div>
-        </div>
+    <div id="previewBanner" class="preview-banner" hidden>
+        ブラウザプレビューモード — Electron 外で表示中のため、変更は保存されません
     </div>
+
+    <div class="app">
+        <!-- ===== サイドバー ===== -->
+        <aside class="sidebar">
+            <div class="brand">
+                <img src="icon.png" alt="" class="brand-icon" />
+                <div>
+                    <div class="brand-name">FilePathOpenner</div>
+                    <div class="brand-tag">コピーしたパスを、一瞬で開く</div>
+                </div>
+            </div>
+
+            <nav class="nav" id="nav" role="tablist" aria-label="設定カテゴリ">
+                <button class="nav-item active" data-panel="panelHome" role="tab" aria-selected="true">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 10.5 12 3l9 7.5" />
+                        <path d="M5 9.5V21h5v-6h4v6h5V9.5" />
+                    </svg>
+                    使い方
+                </button>
+                <button class="nav-item" data-panel="panelShortcuts" role="tab" aria-selected="false">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="2.5" y="6" width="19" height="12" rx="2" />
+                        <path d="M6.5 10h.01M10.2 10h.01M13.9 10h.01M17.6 10h.01M8 14h8" />
+                    </svg>
+                    ショートカット
+                </button>
+                <button class="nav-item" data-panel="panelCleanup" role="tab" aria-selected="false">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M11 4.5 12.8 9l4.5 1.8-4.5 1.8L11 17l-1.8-4.4L4.7 10.8 9.2 9z" />
+                        <path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" />
+                    </svg>
+                    パスの整形
+                </button>
+                <button class="nav-item" data-panel="panelRules" role="tab" aria-selected="false">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M16 3h5v5" />
+                        <path d="M21 3l-7.5 7.5" />
+                        <path d="M4 20l5.5-5.5" />
+                        <path d="M16 21h5v-5" />
+                        <path d="M21 21l-7.5-7.5" />
+                        <path d="M4 4l5.5 5.5" />
+                    </svg>
+                    変換ルール
+                </button>
+                <button class="nav-item" data-panel="panelTester" role="tab" aria-selected="false">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M10 2.5v6L4.6 17.2A3 3 0 0 0 7.2 21.7h9.6a3 3 0 0 0 2.6-4.5L14 8.5v-6" />
+                        <path d="M8.5 2.5h7" />
+                        <path d="M7 14.5h10" />
+                    </svg>
+                    動作テスト
+                </button>
+                <button class="nav-item" data-panel="panelGeneral" role="tab" aria-selected="false">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    </svg>
+                    一般
+                </button>
+            </nav>
+
+            <div class="sidebar-footer" id="appVersion">FilePathOpenner</div>
+        </aside>
+
+        <!-- ===== コンテンツ ===== -->
+        <main class="content" id="content">
+
+            <!-- 使い方 -->
+            <section class="panel active" id="panelHome" role="tabpanel">
+                <h2 class="panel-title">使い方</h2>
+                <p class="panel-desc">
+                    FilePathOpenner は、コピーしたファイルパスや URL をショートカットキーひとつで開く常駐アプリです。
+                    メールやチャットに貼られたパスを、たどる手間なくすぐに開けます。設定はすべて自動保存されます。
+                </p>
+
+                <div class="steps">
+                    <div class="step-card">
+                        <div class="step-badge">STEP 1</div>
+                        <div class="step-icon">
+                            <svg class="i lg" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="8" y="2.5" width="8" height="4" rx="1" />
+                                <path d="M8 4.5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2" />
+                                <path d="M8.5 12h7M8.5 16h5" />
+                            </svg>
+                        </div>
+                        <h3>パスをコピー</h3>
+                        <p>開きたいファイルパスや URL を選択してコピーします。複数行でも OK。</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-badge">STEP 2</div>
+                        <div class="step-icon">
+                            <svg class="i lg" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="2.5" y="6" width="19" height="12" rx="2" />
+                                <path d="M6.5 10h.01M10.2 10h.01M13.9 10h.01M17.6 10h.01M8 14h8" />
+                            </svg>
+                        </div>
+                        <h3>キーを押す</h3>
+                        <p>どの画面からでも <span class="kbd-combo" id="homeShortcutDisplay"></span> を押すだけ。</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-badge">STEP 3</div>
+                        <div class="step-icon">
+                            <svg class="i lg" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                <path d="M15 3h6v6" />
+                                <path d="M10 14 21 3" />
+                            </svg>
+                        </div>
+                        <h3>自動で開く</h3>
+                        <p>エクスプローラーやブラウザで、対象がそのまま開きます。</p>
+                    </div>
+                </div>
+
+                <p class="home-shortcut-note">
+                    親フォルダ（1 階層上）を開きたいときは <span class="kbd-combo" id="homeParentShortcutDisplay"></span>
+                    — キーの変更は<button class="link-button" data-jump="panelShortcuts">ショートカット設定</button>から。
+                </p>
+
+                <div class="card">
+                    <h3 class="card-title">対応している入力</h3>
+                    <ul class="support-list">
+                        <li><span class="support-example">C:\Users\...\資料.xlsx</span>ローカルのファイル / フォルダ</li>
+                        <li><span class="support-example">\\server\share\...</span>ネットワーク共有フォルダ</li>
+                        <li><span class="support-example">https://example.com/...</span>Web ページ（既定のブラウザで開く）</li>
+                        <li><span class="support-example">docs\仕様書.xlsx</span>相対パス（<button class="link-button"
+                                data-jump="panelRules">前提パス</button>と自動で結合）</li>
+                        <li><span class="support-example">DOC-123 などの ID</span><button class="link-button"
+                                data-jump="panelRules">変換ルール</button>で URL や共有フォルダに変換</li>
+                    </ul>
+                </div>
+
+                <div class="callout">
+                    <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9.5" />
+                        <path d="M12 8h.01M12 11.5V16" />
+                    </svg>
+                    <div>
+                        <strong>パスが存在しないときは？</strong><br />
+                        存在する親フォルダまで自動でさかのぼって開きます。うまく開けるか不安なときは
+                        <button class="link-button" data-jump="panelTester">動作テスト</button>で事前に確認できます。
+                    </div>
+                </div>
+            </section>
+
+            <!-- ショートカット -->
+            <section class="panel" id="panelShortcuts" role="tabpanel">
+                <h2 class="panel-title">ショートカットキー</h2>
+                <p class="panel-desc">
+                    入力欄をクリックしてから、割り当てたいキーをそのまま押してください。すぐに保存され、有効になります。
+                </p>
+
+                <div class="card list">
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">クリップボードのパスを開く</div>
+                            <div class="setting-desc">コピー中のテキストを解析して、ファイル / フォルダ / URL を開きます。</div>
+                        </div>
+                        <div class="shortcut-field">
+                            <input type="text" id="txtOpenShortcut" class="shortcut-input" readonly spellcheck="false"
+                                aria-label="パスを開くショートカットキー" />
+                            <div class="field-status" id="statusOpenShortcut"></div>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">親フォルダ（1 階層上）を開く</div>
+                            <div class="setting-desc">対象そのものではなく、その 1 つ上のフォルダ（URL なら上の階層）を開きます。</div>
+                        </div>
+                        <div class="shortcut-field">
+                            <input type="text" id="txtOpenParentShortcut" class="shortcut-input" readonly
+                                spellcheck="false" aria-label="親フォルダを開くショートカットキー" />
+                            <div class="field-status" id="statusOpenParentShortcut"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hint-block">
+                    <ul>
+                        <li><kbd>Esc</kbd> で入力をキャンセル、<kbd>Backspace</kbd> で割り当てを解除（無効化）できます。</li>
+                        <li>F1〜F24 以外のキーは、Ctrl / Alt / Shift のいずれかと組み合わせる必要があります。</li>
+                        <li>他のアプリが同じキーを使っていると登録に失敗することがあります。その場合は別の組み合わせをお試しください。</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- パスの整形 -->
+            <section class="panel" id="panelCleanup" role="tabpanel">
+                <h2 class="panel-title">パスの整形</h2>
+                <p class="panel-desc">
+                    コピーしたテキストを開く前に、じゃまな文字を自動で取り除くための設定です。
+                </p>
+
+                <div class="card list">
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">前後の空白を削除</div>
+                            <div class="setting-desc">「&nbsp;C:\Temp&nbsp;」→「C:\Temp」。コピー時に混ざりがちな空白や改行を除去します。</div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="chkTrimSpaces" />
+                            <span class="switch-track"><span class="switch-thumb"></span></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">前後から除去する文字</div>
+                            <div class="setting-desc">引用符やカッコなど、ここに並べた文字を先頭と末尾から 1 文字ずつ取り除きます。</div>
+                        </div>
+                        <input type="text" id="txtRemoveList" class="input mono remove-input" spellcheck="false"
+                            aria-label="前後から除去する文字のリスト" placeholder="例: &quot;'&lt;&gt;[]" />
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">複数行を 1 つのパスに結合</div>
+                            <div class="setting-desc">
+                                オン: 改行で折り返された長いパスを 1 本につなげて開く ／ オフ: 1 行ずつ別々のパスとして開く。
+                            </div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="chkSinglePath" />
+                            <span class="switch-track"><span class="switch-thumb"></span></span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 変換ルール -->
+            <section class="panel" id="panelRules" role="tabpanel">
+                <h2 class="panel-title">変換ルール</h2>
+                <p class="panel-desc">
+                    コピーした文字列を、開ける形（絶対パス・共有フォルダ・URL）に変換するための設定です。
+                </p>
+
+                <div class="card">
+                    <h3 class="card-title">前提パス</h3>
+                    <p class="card-desc">相対パス（例: docs\仕様書.xlsx）の前に自動で付け足すフォルダです。</p>
+                    <div class="base-path-row">
+                        <input type="text" id="txtBasePath" class="input mono" spellcheck="false"
+                            placeholder="例: C:\Projects または \\server\share" aria-label="前提パス" />
+                        <button id="btnPickBasePath" class="btn" type="button">
+                            <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                                <path
+                                    d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+                            </svg>
+                            参照…
+                        </button>
+                    </div>
+                    <div class="inline-preview" id="basePathPreview"></div>
+                </div>
+
+                <div class="rules-head">
+                    <div>
+                        <h3 class="card-title">プレフィックスルール</h3>
+                        <p class="card-desc">
+                            「DOC-123」のような ID を、URL や共有フォルダのパスに変換します。上から順に判定され、
+                            最初に一致した 1 件だけが適用されます（前提パスより優先）。
+                        </p>
+                    </div>
+                    <button id="btnAddPrefixRule" class="btn primary" type="button">
+                        <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                        ルールを追加
+                    </button>
+                </div>
+                <div id="prefixRulesContainer"></div>
+            </section>
+
+            <!-- 動作テスト -->
+            <section class="panel" id="panelTester" role="tabpanel">
+                <h2 class="panel-title">動作テスト</h2>
+                <p class="panel-desc">
+                    実際に開く前に、コピーする予定のテキストがどう解釈されるかを確認できます。
+                    整形・変換ルールなど、現在の設定がそのまま適用されます。
+                </p>
+
+                <div class="tester-toolbar">
+                    <button id="btnLoadClipboard" class="btn" type="button">
+                        <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="8" y="2.5" width="8" height="4" rx="1" />
+                            <path d="M8 4.5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-13a2 2 0 0 0-2-2h-2" />
+                        </svg>
+                        クリップボードを読み込む
+                    </button>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" id="chkTesterParent" />
+                        親フォルダを開く場合を確認
+                    </label>
+                    <span class="spacer"></span>
+                    <button id="btnOpenTest" class="btn primary" type="button">
+                        <svg class="i" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 3.5 20 12 6 20.5z" />
+                        </svg>
+                        この内容で開く
+                    </button>
+                </div>
+
+                <textarea id="txtTester" class="tester-input" spellcheck="false"
+                    placeholder="例:&#10;C:\Windows\System32&#10;https://example.com/docs/manual.pdf&#10;DOC-123"></textarea>
+
+                <div class="tester-results" id="testerResults"></div>
+            </section>
+
+            <!-- 一般 -->
+            <section class="panel" id="panelGeneral" role="tabpanel">
+                <h2 class="panel-title">一般</h2>
+                <p class="panel-desc">アプリの起動と常駐に関する設定です。</p>
+
+                <div class="card list">
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">PC 起動時に自動で開始</div>
+                            <div class="setting-desc">
+                                Windows のスタートアップに登録します。<span class="status-inline" id="lblStartupStatus"></span><span
+                                    class="spinner" id="startupLoading" aria-hidden="true"></span>
+                            </div>
+                        </div>
+                        <label class="switch">
+                            <input type="checkbox" id="chkStartup" aria-label="PC 起動時に自動で開始" />
+                            <span class="switch-track"><span class="switch-thumb"></span></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">タスクトレイ常駐</h3>
+                    <p class="card-desc">
+                        ウィンドウを閉じてもアプリは終了せず、タスクトレイに常駐してショートカットを待ち受けます。
+                        完全に終了するには、トレイアイコンを右クリックして「終了」を選んでください。
+                    </p>
+                </div>
+
+                <div class="card">
+                    <h3 class="card-title">このアプリについて</h3>
+                    <p class="card-desc" id="aboutInfo">FilePathOpenner — MIT License</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toastHost" class="toast-host" aria-live="polite"></div>
+
     <script src="renderer.js"></script>
 </body>
 

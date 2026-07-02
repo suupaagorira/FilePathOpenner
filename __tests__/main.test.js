@@ -4,6 +4,7 @@ jest.unstable_mockModule('fs', () => ({
   default: {
     existsSync: jest.fn(),
     unlink: jest.fn(),
+    statSync: jest.fn(),
   },
 }));
 jest.unstable_mockModule('child_process', () => ({ execFile: jest.fn() }));
@@ -35,7 +36,13 @@ const electronMock = {
 jest.unstable_mockModule('electron', () => electronMock);
 
 const fs = (await import('fs')).default;
-const { openClipboardPath, checkIfStartupRegistered, unRegisterStartupShortcut, applyPrefixRules } = await import('../main.js');
+const {
+  openClipboardPath,
+  checkIfStartupRegistered,
+  unRegisterStartupShortcut,
+  applyPrefixRules,
+  previewClipboardText,
+} = await import('../main.js');
 const { clipboard, shell, dialog } = electronMock;
 
 describe('main.js utilities', () => {
@@ -241,6 +248,45 @@ describe('main.js utilities', () => {
     clipboard.readText.mockReturnValue('"DOC-123"');
     openClipboardPath(false);
     expect(shell.openExternal).toHaveBeenCalledWith('https://intra/docs/DOC-123');
+  });
+
+  test('previewClipboardText classifies url, exact, fallback and missing entries', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = true;
+    storeData.removeList = '"';
+    storeData.basePath = '';
+    storeData.prefixRules = [{ prefix: 'DOC-', base: 'https://intra/docs/', stripPrefix: false }];
+    fs.existsSync.mockImplementation(p => p === '/data' || p === '/data/file.txt');
+    fs.statSync.mockImplementation(p => ({ isDirectory: () => p === '/data' }));
+
+    const results = previewClipboardText('DOC-9\n/data/file.txt\n/data/missing/deep.txt\nZ:\\nope', false);
+
+    expect(results).toHaveLength(4);
+    expect(results[0]).toMatchObject({ kind: 'url', target: 'https://intra/docs/DOC-9', isUrl: true });
+    expect(results[1]).toMatchObject({
+      kind: 'exact', openPath: '/data/file.txt', levels: 0, isDirectory: false,
+    });
+    expect(results[2]).toMatchObject({ kind: 'fallback', openPath: '/data', levels: 2 });
+    expect(results[3]).toMatchObject({ kind: 'missing', openPath: null });
+    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    expect(dialog.showErrorBox).not.toHaveBeenCalled();
+  });
+
+  test('previewClipboardText previews parent-opening behavior', () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    clipboard.readText.mockReturnValue('');
+    fs.existsSync.mockReturnValue(true);
+    fs.statSync.mockReturnValue({ isDirectory: () => true });
+
+    const results = previewClipboardText('https://example.com/dir/file.txt\n/data/dir/file.txt', true);
+
+    expect(results[0]).toMatchObject({ kind: 'url', target: 'https://example.com/dir' });
+    expect(results[1]).toMatchObject({ kind: 'exact', target: '/data/dir', isDirectory: true });
   });
 
   test('checkIfStartupRegistered returns true when shortcut exists', () => {

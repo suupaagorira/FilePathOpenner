@@ -1,6 +1,6 @@
 {
   "name": "file_path_openner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "main": "main.js",
   "scripts": {
@@ -25,9 +25,10 @@
     "productName": "FilePathOpenner",
     "files": [
       "main.js",
-      "preload.js",
+      "preload.cjs",
       "renderer.js",
       "index.html",
+      "styles.css",
       "package.json",
       "icon.png"
     ],

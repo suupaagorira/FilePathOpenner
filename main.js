@@ -25,16 +25,18 @@ const store = new Store({
     defaults: {
         openShortcut: "Ctrl+E",
         openParentShortcut: "Ctrl+Shift+E",
-        openAsSinglePath: false,
-        trimSpaces: false,
-        removeList: "\"",
+        openAsSinglePath: true,
+        trimSpaces: true,
+        removeList: "<>＜＞()（）[]「」{}｛｝\"”'’",
         basePath: "",
-        prefixRules: []
+        prefixRules: [],
+        trayNoticeShown: false
     },
 });
 
 let mainWindow = null;
 let tray = null;
+let lastShortcutFailures = [];
 
 /**
  * Create a shortcut in the Windows startup folder so the app launches on login.
@@ -58,7 +60,7 @@ function registerStartupShortcut() {
             "Startup"
         );
 
-        // Electronの実行ファイルパス (node.exeなど) 
+        // Electronの実行ファイルパス (node.exeなど)
         const exePath = process.execPath;
 
         // lnkファイルの配置先を作成
@@ -135,8 +137,6 @@ function unRegisterStartupShortcut() {
             fs.unlink(shortcutPath, (err) => {
                 if (err) {
                     dialog.showErrorBox("スタートアップ削除エラー", err.message);
-                } else {
-                    // 削除成功時の処理があればここに書く
                 }
             });
         }
@@ -146,59 +146,109 @@ function unRegisterStartupShortcut() {
 }
 
 /**
+ * Show and focus the settings window.
+ *
+ * @returns {void}
+ */
+function showMainWindow() {
+    if (!mainWindow) return;
+    mainWindow.show();
+    mainWindow.setSkipTaskbar(false);
+    mainWindow.focus();
+}
+
+/**
+ * Notify the user (once) that closing the window keeps the app in the tray.
+ * Windows ではバルーン通知、その他 OS ではダイアログで知らせる。
+ *
+ * @returns {void}
+ */
+function notifyTrayResidenceOnce() {
+    if (store.get("trayNoticeShown")) return;
+    store.set({ trayNoticeShown: true });
+    const title = "FilePathOpenner は動作中です";
+    const content = "タスクトレイに常駐しています。終了するにはトレイアイコンを右クリックして「終了」を選んでください。";
+    if (tray && process.platform === "win32") {
+        tray.displayBalloon({ iconType: "info", title, content });
+    } else {
+        dialog.showMessageBox({ type: "info", message: `${title}\n${content}`, buttons: ["OK"] });
+    }
+}
+
+/**
  * メインウィンドウ生成
  */
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 880,
-        height: 700,
+        width: 960,
+        height: 720,
+        minWidth: 760,
+        minHeight: 560,
+        backgroundColor: "#101318",
+        show: false,
+        autoHideMenuBar: true,
         webPreferences: {
-            preload: path.join(app.getAppPath(), "preload.js"),
+            preload: path.join(app.getAppPath(), "preload.cjs"),
             nodeIntegration: false,
             contextIsolation: true,
         },
-        menu: null,
     });
     mainWindow.setMenuBarVisibility(false);
-
     mainWindow.loadFile(path.join(app.getAppPath(), "index.html"));
+    mainWindow.once("ready-to-show", () => mainWindow.show());
 
     // xボタン等でウィンドウが閉じられそうになったら、実際には閉じずにタスクトレイへ
     mainWindow.on("close", (event) => {
         event.preventDefault();
         mainWindow.hide();
         mainWindow.setSkipTaskbar(true);
-
-        // タスクトレイへ隠す旨をユーザーへ通知
-        dialog.showMessageBox({
-            type: "info",
-            message: "FilePathOpennerが実行中です。タスクトレイから操作してください。",
-            buttons: ["OK"],
-        });
+        notifyTrayResidenceOnce();
     });
 }
 
 /**
- * グローバルショートカットの登録を行う
+ * タスクトレイアイコンとメニューを作成する
+ */
+function createTray() {
+    const iconPath = path.join(app.getAppPath(), "icon.png");
+    const trayImage = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    tray = new Tray(trayImage);
+
+    const contextMenu = Menu.buildFromTemplate([
+        { label: "設定画面を開く", click: showMainWindow },
+        { type: "separator" },
+        { label: "終了", click: () => app.exit(0) },
+    ]);
+    tray.setToolTip("FilePathOpenner — コピーしたパスをショートカットで開く");
+    tray.setContextMenu(contextMenu);
+    tray.on("double-click", showMainWindow);
+}
+
+/**
+ * Register the configured global shortcuts, replacing previous registrations.
+ *
+ * @returns {string[]} Accelerators that could not be registered.
  */
 function registerGlobalShortcuts() {
     globalShortcut.unregisterAll();
+    const failures = [];
 
-    // クリップボードのパスを開く
-    const openShortcut = store.get("openShortcut");
-    if (openShortcut) {
-        globalShortcut.register(openShortcut, () => {
-            openClipboardPath(false);
-        });
-    }
+    const tryRegister = (accelerator, handler) => {
+        if (!accelerator) return;
+        try {
+            if (!globalShortcut.register(accelerator, handler)) {
+                failures.push(accelerator);
+            }
+        } catch (err) {
+            failures.push(accelerator);
+        }
+    };
 
-    // 1階層上ディレクトリを開く
-    const openParentShortcut = store.get("openParentShortcut");
-    if (openParentShortcut) {
-        globalShortcut.register(openParentShortcut, () => {
-            openClipboardPath(true);
-        });
-    }
+    tryRegister(store.get("openShortcut"), () => openClipboardPath(false));
+    tryRegister(store.get("openParentShortcut"), () => openClipboardPath(true));
+
+    lastShortcutFailures = failures;
+    return failures;
 }
 
 /**
@@ -219,6 +269,25 @@ function findExistingPath(targetPath) {
         levels += 1;
     }
     return { path: current, levels };
+}
+
+/**
+ * Remove characters contained in `chars` from both ends of a string.
+ *
+ * @param {string} str - Input string.
+ * @param {string} chars - Characters to strip.
+ * @returns {string} Trimmed string.
+ */
+function trimSpecial(str, chars) {
+    let startIdx = 0;
+    while (startIdx < str.length && chars.includes(str[startIdx])) {
+        startIdx++;
+    }
+    let endIdx = str.length - 1;
+    while (endIdx >= 0 && chars.includes(str[endIdx])) {
+        endIdx--;
+    }
+    return str.substring(startIdx, endIdx + 1);
 }
 
 /**
@@ -253,74 +322,61 @@ function applyPrefixRules(text, rules) {
 }
 
 /**
- * Parse clipboard text and open the referenced file paths or URLs.
- * When a clipboard line starts with a configured prefix rule, it is treated as the
- * discriminating part of a URL or shared folder and combined with the rule's base
- * string. Otherwise, when a base path is configured it is prefixed to relative paths.
+ * Read the settings used by the open/preview pipeline.
  *
- * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
- * @returns {void}
- * @throws No exceptions are thrown; invalid paths trigger error dialogs.
+ * @returns {object} Snapshot of the relevant settings.
  */
-function openClipboardPath(openParent) {
-    let text = clipboard.readText();
+function readOpenSettings() {
+    return {
+        openAsSinglePath: store.get("openAsSinglePath"),
+        trimSpaces: store.get("trimSpaces"),
+        removeList: store.get("removeList"),
+        basePath: store.get("basePath"),
+        prefixRules: store.get("prefixRules"),
+    };
+}
 
-    // 設定取得
-    const openAsSinglePath = store.get("openAsSinglePath");
-    const trimSpaces = store.get("trimSpaces");
-    const removeList = store.get("removeList");
-    const basePath = store.get("basePath");
-    const prefixRules = store.get("prefixRules");
-
-    // 前後の空白をトリム
-    if (trimSpaces) {
-        text = text.trim();
+/**
+ * Resolve raw clipboard text into a list of open targets.
+ * Cleanup (trim / removeList), line splitting or joining, prefix rules, base path
+ * prefixing and the optional parent transformation are applied in this order.
+ *
+ * @param {string} text - Raw clipboard text.
+ * @param {object} settings - Settings snapshot from readOpenSettings().
+ * @param {boolean} openParent - If `true`, targets are rewritten to their parent.
+ * @returns {Array<{input: string, target: string, isUrl: boolean}>} Resolved entries.
+ */
+function resolveClipboardTargets(text, settings, openParent) {
+    let cleaned = text;
+    if (settings.trimSpaces) {
+        cleaned = cleaned.trim();
+    }
+    if (settings.removeList) {
+        cleaned = trimSpecial(cleaned, settings.removeList);
     }
 
-    // ユーザーが指定した文字(removeList)を先頭・末尾から除去
-    function trimSpecial(str, chars) {
-        let startIdx = 0;
-        while (startIdx < str.length && chars.includes(str[startIdx])) {
-            startIdx++;
-        }
-        let endIdx = str.length - 1;
-        while (endIdx >= 0 && chars.includes(str[endIdx])) {
-            endIdx--;
-        }
-        return str.substring(startIdx, endIdx + 1);
-    }
-    if (removeList) {
-        text = trimSpecial(text, removeList);
-    }
-
-    // 1つのパスとして開く or 改行区切りで複数開く
-    let paths = [];
-    if (openAsSinglePath) {
-        const singleLine = text.replace(/\s*\r\s*/g, "").replace(/\s*\n\s*/g, "");
-        paths = [singleLine];
+    let lines;
+    if (settings.openAsSinglePath) {
+        lines = [cleaned.replace(/\s*\r\s*/g, "").replace(/\s*\n\s*/g, "")];
     } else {
-        const splitted = text.replace(/\r/g, "").split("\n");
-        paths = splitted.map((line) => line);
+        lines = cleaned.replace(/\r/g, "").split("\n");
     }
 
-    // 実際にパスを開く
-    paths.forEach((p) => {
-        if (!p) return; // 空文字はスキップ
+    const entries = [];
+    for (const line of lines) {
+        if (!line) continue;
 
-        let targetPath = p;
-
-        // 設定済みのプレフィックスルールにマッチする場合は、結合結果を優先して使う
-        const ruleResult = applyPrefixRules(p, prefixRules);
+        let targetPath = line;
+        const ruleResult = applyPrefixRules(line, settings.prefixRules);
         if (ruleResult.matched) {
             targetPath = ruleResult.target;
-        } else if (basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
-            targetPath = path.join(basePath, targetPath);
+        } else if (settings.basePath && !/^https?:\/\//i.test(targetPath) && !path.isAbsolute(targetPath)) {
+            targetPath = path.join(settings.basePath, targetPath);
         }
 
-        let isHttpUrl = /^https?:\/\//i.test(targetPath);
-
+        const isUrl = /^https?:\/\//i.test(targetPath);
         if (openParent) {
-            if (isHttpUrl) {
+            if (isUrl) {
                 try {
                     const u = new URL(targetPath);
                     u.pathname = u.pathname.replace(/\/[^/]*$/, "");
@@ -333,17 +389,36 @@ function openClipboardPath(openParent) {
                 targetPath = targetPath.replace(/[\\\\/][^\\\\/]*$/, "");
             }
         }
+        if (!targetPath) continue;
 
-        if (!targetPath) return;
+        entries.push({ input: line, target: targetPath, isUrl });
+    }
+    return entries;
+}
 
-        if (isHttpUrl) {
-            shell.openExternal(targetPath);
+/**
+ * Open every target resolved from the given text.
+ * URLs open in the default browser; file paths fall back to the nearest existing
+ * parent directory with a notification, or show an error when nothing exists.
+ *
+ * @param {string} text - Raw clipboard-like text.
+ * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
+ * @returns {void}
+ * @throws No exceptions are thrown; invalid paths trigger error dialogs.
+ */
+function openTextTargets(text, openParent) {
+    const settings = readOpenSettings();
+    const entries = resolveClipboardTargets(text, settings, openParent);
+
+    entries.forEach(({ target, isUrl }) => {
+        if (isUrl) {
+            shell.openExternal(target);
             return;
         }
 
-        const result = findExistingPath(targetPath);
+        const result = findExistingPath(target);
         if (!result) {
-            dialog.showErrorBox("存在しないパス", `\"${targetPath}\" は存在しないパスです。`);
+            dialog.showErrorBox("存在しないパス", `"${target}" は存在しないパスです。`);
             return;
         }
 
@@ -351,7 +426,7 @@ function openClipboardPath(openParent) {
         if (levels > 0) {
             dialog.showMessageBox({
                 type: "info",
-                message: `"${targetPath}" は存在しません。${levels} 階層上の "${finalPath}" を開きます。`,
+                message: `"${target}" は存在しません。${levels} 階層上の "${finalPath}" を開きます。`,
                 buttons: ["OK"],
             });
         }
@@ -359,57 +434,89 @@ function openClipboardPath(openParent) {
     });
 }
 
-if (process.env.NODE_ENV !== "test") {
-    app.whenReady().then(() => {
-        createWindow();
+/**
+ * Parse clipboard text and open the referenced file paths or URLs.
+ *
+ * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
+ * @returns {void}
+ * @throws No exceptions are thrown; invalid paths trigger error dialogs.
+ */
+function openClipboardPath(openParent) {
+    openTextTargets(clipboard.readText(), openParent);
+}
 
-    // タスクトレイアイコンの設定
-    const iconPath = path.join(app.getAppPath(), "icon.png"); // 任意のアイコンを用意
-    let trayImage = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-    tray = new Tray(trayImage);
-
-    const contextMenu = Menu.buildFromTemplate([
-        {
-            label: "設定画面を開く",
-            click: () => {
-                mainWindow.show();
-                mainWindow.setSkipTaskbar(false);
-            },
-        },
-        {
-            label: "ソフトを終了する",
-            click: () => {
-                app.exit(0);
-            },
-        },
-    ]);
-    tray.setToolTip("FilePathOpenner");
-    tray.setContextMenu(contextMenu);
-
-    // グローバルショートカット登録
-        registerGlobalShortcuts();
-    });
-
-    app.on("window-all-closed", (e) => {
-        e.preventDefault();
-    });
-
-    app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow();
-        } else {
-            mainWindow.show();
-            mainWindow.setSkipTaskbar(false);
+/**
+ * Build a dry-run report of how the given text would be opened, without opening it.
+ * Used by the settings screen's "動作テスト" panel.
+ *
+ * @param {string} text - Raw clipboard-like text.
+ * @param {boolean} openParent - If `true`, preview the parent-opening behavior.
+ * @returns {Array<object>} Entries with kind: "url" | "exact" | "fallback" | "missing".
+ */
+function previewClipboardText(text, openParent) {
+    const settings = readOpenSettings();
+    return resolveClipboardTargets(text, settings, openParent).map((entry) => {
+        if (entry.isUrl) {
+            return { ...entry, kind: "url", openPath: entry.target, levels: 0, isDirectory: false };
         }
+        const found = findExistingPath(entry.target);
+        if (!found) {
+            return { ...entry, kind: "missing", openPath: null, levels: 0, isDirectory: false };
+        }
+        let isDirectory = false;
+        try {
+            isDirectory = fs.statSync(found.path).isDirectory();
+        } catch (err) {
+            isDirectory = false;
+        }
+        return {
+            ...entry,
+            kind: found.levels > 0 ? "fallback" : "exact",
+            openPath: found.path,
+            levels: found.levels,
+            isDirectory,
+        };
     });
 }
 
+if (process.env.NODE_ENV !== "test") {
+    const gotSingleInstanceLock = app.requestSingleInstanceLock();
+    if (!gotSingleInstanceLock) {
+        // 既に起動済みの場合は多重起動しない（既存ウィンドウ側にフォーカスが移る）
+        app.quit();
+    } else {
+        app.on("second-instance", showMainWindow);
+
+        app.whenReady().then(() => {
+            Menu.setApplicationMenu(null);
+            createWindow();
+            createTray();
+            registerGlobalShortcuts();
+        });
+
+        app.on("window-all-closed", (e) => {
+            e.preventDefault();
+        });
+
+        app.on("activate", () => {
+            if (BrowserWindow.getAllWindows().length === 0) {
+                createWindow();
+            } else {
+                showMainWindow();
+            }
+        });
+
+        app.on("will-quit", () => {
+            globalShortcut.unregisterAll();
+        });
+    }
+}
 
 // レンダラからのIPCハンドラ
 ipcMain.on("update-settings", (event, newSettings) => {
     store.set(newSettings);
-    registerGlobalShortcuts();
-    event.returnValue = true;
+    const shortcutFailures = registerGlobalShortcuts();
+    event.returnValue = { ok: true, shortcutFailures };
 });
 
 ipcMain.on("register-startup", (event) => {
@@ -426,9 +533,47 @@ ipcMain.on("unregister-startup", (event) => {
     event.returnValue = true;
 });
 
-// ここで現在の設定を返すIPCハンドラを追加する(レンダラで読み取り用)
+// 現在の設定を返すIPCハンドラ(レンダラで読み取り用)
 ipcMain.handle("get-settings", () => {
     return store.store;
+});
+
+// 動作テスト: 開かずに解析結果だけ返す
+ipcMain.handle("preview-paths", (event, text, openParent) => {
+    return previewClipboardText(String(text ?? ""), !!openParent);
+});
+
+// 動作テスト: 指定テキストを実際に開く
+ipcMain.handle("open-text", (event, text, openParent) => {
+    openTextTargets(String(text ?? ""), !!openParent);
+    return true;
+});
+
+// クリップボードのテキストを返す（動作テスト用）
+ipcMain.handle("get-clipboard-text", () => {
+    return clipboard.readText();
+});
+
+// 前提パス用のフォルダ選択ダイアログ
+ipcMain.handle("pick-folder", async () => {
+    const options = {
+        title: "前提パスにするフォルダを選択",
+        properties: ["openDirectory"],
+    };
+    const result = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, options)
+        : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+});
+
+// バージョン・プラットフォーム・直近のショートカット登録失敗を返す
+ipcMain.handle("get-app-info", () => {
+    return {
+        version: typeof app.getVersion === "function" ? app.getVersion() : "",
+        platform: process.platform,
+        shortcutFailures: lastShortcutFailures,
+    };
 });
 
 // テスト用に一部関数を公開
@@ -437,5 +582,8 @@ export {
     checkIfStartupRegistered,
     unRegisterStartupShortcut,
     openClipboardPath,
+    openTextTargets,
     applyPrefixRules,
+    resolveClipboardTargets,
+    previewClipboardText,
 };
