@@ -67,7 +67,7 @@
             registerStartup: () => true,
             unRegisterStartup: () => true,
             checkStartup: async () => false,
-            getAppInfo: async () => ({ version: "1.1.0", platform: "win32", shortcutFailures: [] }),
+            getAppInfo: async () => ({ version: "1.1.1", platform: "win32", shortcutFailures: [] }),
             getClipboardText: async () => "",
             pickFolder: async () => null,
             openText: async () => true,
