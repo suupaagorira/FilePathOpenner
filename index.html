@@ -129,7 +129,8 @@
                 </div>
 
                 <p class="home-shortcut-note">
-                    親フォルダ（1 階層上）を開きたいときは <span class="kbd-combo" id="homeParentShortcutDisplay"></span>
+                    親フォルダ（1 階層上）を開きたいときは <span class="kbd-combo" id="homeParentShortcutDisplay"></span>、
+                    Office ファイルを読み取り専用で開きたいときは <span class="kbd-combo" id="homeReadOnlyShortcutDisplay"></span>
                     — キーの変更は<button class="link-button" data-jump="panelShortcuts">ショートカット設定</button>から。
                 </p>
 
@@ -189,12 +190,28 @@
                             <div class="field-status" id="statusOpenParentShortcut"></div>
                         </div>
                     </div>
+                    <div class="setting-row">
+                        <div class="setting-info">
+                            <div class="setting-title">読み取り専用で開く</div>
+                            <div class="setting-desc">
+                                Excel / Word / PowerPoint のファイルを読み取り専用モードで開きます（それ以外のファイルは通常どおり開きます）。
+                            </div>
+                        </div>
+                        <div class="shortcut-field">
+                            <input type="text" id="txtOpenReadOnlyShortcut" class="shortcut-input" readonly
+                                spellcheck="false" aria-label="読み取り専用で開くショートカットキー" />
+                            <div class="field-status" id="statusOpenReadOnlyShortcut"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="hint-block">
                     <ul>
                         <li><kbd>Esc</kbd> で入力をキャンセル、<kbd>Backspace</kbd> で割り当てを解除（無効化）できます。</li>
                         <li>F1〜F24 以外のキーは、Ctrl / Alt / Shift のいずれかと組み合わせる必要があります。</li>
+                        <li>Alt などの修飾キーをすばやく 2 回押すと、2連打ショートカット（例: <kbd>Alt×2</kbd>）として割り当てられます。
+                            Shift を押しながら Alt を 2 回押せば <kbd>Shift+Alt×2</kbd> になります。</li>
+                        <li>2連打ショートカットはキー入力を横取りしないため、使用中のアプリ側でも Alt 本来の動作（メニュー選択など）が起きることがあります。</li>
                         <li>他のアプリが同じキーを使っていると登録に失敗することがあります。その場合は別の組み合わせをお試しください。</li>
                     </ul>
                 </div>

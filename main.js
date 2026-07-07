@@ -19,12 +19,21 @@ import path from "path";
 import fs from "fs";
 import { execFile } from "child_process";
 import Store from "electron-store";
+import uiohook from "uiohook-napi";
+import {
+    createDoubleTapDetector,
+    isDoubleTapAccelerator,
+    parseDoubleTapAccelerator,
+} from "./doubleTap.js";
+
+const { uIOhook, UiohookKey } = uiohook;
 
 // electron-storeで設定を永続化
 const store = new Store({
     defaults: {
         openShortcut: "Ctrl+E",
         openParentShortcut: "Ctrl+Shift+E",
+        openReadOnlyShortcut: "",
         openAsSinglePath: true,
         trimSpaces: true,
         removeList: "<>＜＞()（）[]「」{}｛｝\"”'’",
@@ -224,17 +233,71 @@ function createTray() {
     tray.on("double-click", showMainWindow);
 }
 
+// ---- 修飾キー2連打ショートカット（グローバルキーフック） ----
+
+// uiohook のキーコード → 正規化した修飾キー名（左右のキーは同一視する）
+const MODIFIER_KEYCODES = new Map([
+    [UiohookKey.Ctrl, "Ctrl"], [UiohookKey.CtrlRight, "Ctrl"],
+    [UiohookKey.Alt, "Alt"], [UiohookKey.AltRight, "Alt"],
+    [UiohookKey.Shift, "Shift"], [UiohookKey.ShiftRight, "Shift"],
+    [UiohookKey.Meta, "Super"], [UiohookKey.MetaRight, "Super"],
+]);
+
+const doubleTapDetector = createDoubleTapDetector();
+let keyHookRunning = false;
+
+uIOhook.on("keydown", (event) => {
+    doubleTapDetector.keydown(MODIFIER_KEYCODES.get(event.keycode) ?? null, Date.now());
+});
+uIOhook.on("keyup", (event) => {
+    doubleTapDetector.keyup(MODIFIER_KEYCODES.get(event.keycode) ?? null, Date.now());
+});
+
+/**
+ * Start or stop the global keyboard hook used for double-tap shortcuts.
+ * The hook only runs while at least one double-tap binding is configured.
+ *
+ * @param {boolean} active - Desired hook state.
+ * @returns {boolean} `true` when the hook is in the desired state.
+ */
+function ensureKeyHook(active) {
+    if (active === keyHookRunning) return true;
+    try {
+        if (active) {
+            uIOhook.start();
+        } else {
+            uIOhook.stop();
+        }
+        keyHookRunning = active;
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
 /**
  * Register the configured global shortcuts, replacing previous registrations.
+ * Ordinary accelerators go through Electron's globalShortcut; double-tap
+ * accelerators ("Alt×2" など) are routed to the global key hook instead.
  *
  * @returns {string[]} Accelerators that could not be registered.
  */
 function registerGlobalShortcuts() {
     globalShortcut.unregisterAll();
     const failures = [];
+    const doubleTapBindings = [];
 
     const tryRegister = (accelerator, handler) => {
         if (!accelerator) return;
+        if (isDoubleTapAccelerator(accelerator)) {
+            const parsed = parseDoubleTapAccelerator(accelerator);
+            if (parsed) {
+                doubleTapBindings.push({ ...parsed, accelerator, handler });
+            } else {
+                failures.push(accelerator);
+            }
+            return;
+        }
         try {
             if (!globalShortcut.register(accelerator, handler)) {
                 failures.push(accelerator);
@@ -246,6 +309,12 @@ function registerGlobalShortcuts() {
 
     tryRegister(store.get("openShortcut"), () => openClipboardPath(false));
     tryRegister(store.get("openParentShortcut"), () => openClipboardPath(true));
+    tryRegister(store.get("openReadOnlyShortcut"), () => openClipboardPath(false, { readOnly: true }));
+
+    doubleTapDetector.setBindings(doubleTapBindings);
+    if (!ensureKeyHook(doubleTapBindings.length > 0)) {
+        failures.push(...doubleTapBindings.map((binding) => binding.accelerator));
+    }
 
     lastShortcutFailures = failures;
     return failures;
@@ -396,6 +465,86 @@ function resolveClipboardTargets(text, settings, openParent) {
     return entries;
 }
 
+// ---- 読み取り専用オープン（Office 系アプリ） ----
+
+// 拡張子ごとに、読み取り専用で開ける Office アプリの COM 情報を対応付ける
+const OFFICE_READONLY_APPS = [
+    {
+        progId: "Excel.Application",
+        extensions: [".xls", ".xlsx", ".xlsm", ".xlsb"],
+        // Workbooks.Open(Filename, UpdateLinks, ReadOnly)
+        openCall: "[void]$app.Workbooks.Open($path, 0, $true)",
+        showCall: "$app.Visible = $true",
+    },
+    {
+        progId: "Word.Application",
+        extensions: [".doc", ".docx", ".docm"],
+        // Documents.Open(FileName, ConfirmConversions, ReadOnly)
+        openCall: "[void]$app.Documents.Open($path, $false, $true)",
+        showCall: "$app.Visible = $true",
+    },
+    {
+        progId: "PowerPoint.Application",
+        extensions: [".ppt", ".pptx", ".pptm"],
+        // Presentations.Open(FileName, ReadOnly, Untitled, WithWindow) — msoTrue = -1
+        openCall: "[void]$app.Presentations.Open($path, -1, 0, -1)",
+        showCall: "",
+    },
+];
+
+/**
+ * Build the PowerShell script that opens a file read-only via COM automation.
+ * A running instance is reused when possible; a newly created one is closed
+ * again if opening fails so no orphan process is left behind.
+ *
+ * @param {{progId: string, openCall: string, showCall: string}} officeApp - COM target.
+ * @param {string} filePath - Absolute path of the file to open.
+ * @returns {string} Single-line PowerShell script.
+ */
+function buildReadOnlyPsScript(officeApp, filePath) {
+    const escapedPath = filePath.replace(/'/g, "''");
+    const openBody = (officeApp.showCall ? `${officeApp.showCall}; ` : "") + officeApp.openCall;
+    return [
+        "$ErrorActionPreference = 'Stop'",
+        `$path = '${escapedPath}'`,
+        "$created = $false",
+        `try { $app = [Runtime.InteropServices.Marshal]::GetActiveObject('${officeApp.progId}') } `
+        + `catch { $app = New-Object -ComObject '${officeApp.progId}'; $created = $true }`,
+        `try { ${openBody} } catch { if ($created) { try { $app.Quit() } catch { } }; exit 1 }`,
+    ].join("; ");
+}
+
+/**
+ * Open a file in read-only mode when a matching Office application exists.
+ * Other file types (and non-Windows platforms) fall back to a normal open.
+ *
+ * @param {string} finalPath - Existing path to open.
+ * @returns {void}
+ * @throws No exceptions are thrown; failures are shown in an error dialog.
+ */
+function openPathReadOnly(finalPath) {
+    const ext = path.extname(finalPath).toLowerCase();
+    const officeApp = OFFICE_READONLY_APPS.find((entry) => entry.extensions.includes(ext));
+    if (!officeApp || process.platform !== "win32") {
+        shell.openPath(finalPath);
+        return;
+    }
+    const script = buildReadOnlyPsScript(officeApp, finalPath);
+    execFile(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", script],
+        { windowsHide: true },
+        (error) => {
+            if (error) {
+                dialog.showErrorBox(
+                    "読み取り専用で開けませんでした",
+                    `"${finalPath}" を読み取り専用モードで開けませんでした。`
+                    + "対応する Office アプリがインストールされているか確認してください。");
+            }
+        }
+    );
+}
+
 /**
  * Open every target resolved from the given text.
  * URLs open in the default browser; file paths fall back to the nearest existing
@@ -403,10 +552,11 @@ function resolveClipboardTargets(text, settings, openParent) {
  *
  * @param {string} text - Raw clipboard-like text.
  * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
+ * @param {{readOnly?: boolean}} [options] - Set `readOnly` to open files read-only.
  * @returns {void}
  * @throws No exceptions are thrown; invalid paths trigger error dialogs.
  */
-function openTextTargets(text, openParent) {
+function openTextTargets(text, openParent, options = {}) {
     const settings = readOpenSettings();
     const entries = resolveClipboardTargets(text, settings, openParent);
 
@@ -430,7 +580,11 @@ function openTextTargets(text, openParent) {
                 buttons: ["OK"],
             });
         }
-        shell.openPath(finalPath);
+        if (options.readOnly) {
+            openPathReadOnly(finalPath);
+        } else {
+            shell.openPath(finalPath);
+        }
     });
 }
 
@@ -438,11 +592,12 @@ function openTextTargets(text, openParent) {
  * Parse clipboard text and open the referenced file paths or URLs.
  *
  * @param {boolean} openParent - If `true`, open the parent directory or URL instead.
+ * @param {{readOnly?: boolean}} [options] - Set `readOnly` to open files read-only.
  * @returns {void}
  * @throws No exceptions are thrown; invalid paths trigger error dialogs.
  */
-function openClipboardPath(openParent) {
-    openTextTargets(clipboard.readText(), openParent);
+function openClipboardPath(openParent, options = {}) {
+    openTextTargets(clipboard.readText(), openParent, options);
 }
 
 /**
@@ -508,6 +663,7 @@ if (process.env.NODE_ENV !== "test") {
 
         app.on("will-quit", () => {
             globalShortcut.unregisterAll();
+            ensureKeyHook(false);
         });
     }
 }
@@ -581,8 +737,10 @@ export {
     registerStartupShortcut,
     checkIfStartupRegistered,
     unRegisterStartupShortcut,
+    registerGlobalShortcuts,
     openClipboardPath,
     openTextTargets,
+    openPathReadOnly,
     applyPrefixRules,
     resolveClipboardTargets,
     previewClipboardText,

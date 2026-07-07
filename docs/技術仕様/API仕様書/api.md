@@ -73,12 +73,26 @@
 - `ipcMain.handle('get-app-info', handler)`
   - `{ version, platform, shortcutFailures }` を返す。
 
+## ショートカットの登録方式（`main.js` / `doubleTap.js`）
+- 通常のアクセラレータ（`Ctrl+E` など）は Electron の `globalShortcut` で登録します。
+- `Alt×2` / `Shift+Alt×2` のような **修飾キー 2 連打アクセラレータ**（末尾が `×2`）は `globalShortcut` では扱えないため、
+  `uiohook-napi` のグローバルキーフックに接続した検出器（`doubleTap.js`）で処理します。
+  - `isDoubleTapAccelerator(accel)` — 2 連打表記かを判定。
+  - `parseDoubleTapAccelerator(accel)` — `{ tapKey, mods }` に解析（無効なら `null`）。
+  - `createDoubleTapDetector()` — keydown / keyup を受け取り、同じ修飾キーが 400ms 以内に
+    クリーンに 2 回タップされ、押しっぱなしの修飾キーがバインドと一致したときにハンドラを呼ぶ。
+  - キーフックは 2 連打バインドが 1 つ以上あるときだけ起動し、なくなれば停止します。
+
 ## main.js の公開関数（テスト用）
 - `registerStartupShortcut()`
 - `checkIfStartupRegistered()`
 - `unRegisterStartupShortcut()`
-- `openClipboardPath(openParent)` — クリップボードを読み取って開く。
-- `openTextTargets(text, openParent)` — 任意テキストを解析して実際に開く。
+- `registerGlobalShortcuts()` — 設定中の 3 つのショートカットを登録し直し、失敗したアクセラレータの配列を返す。
+- `openClipboardPath(openParent, options)` — クリップボードを読み取って開く。`options.readOnly` で読み取り専用オープン。
+- `openTextTargets(text, openParent, options)` — 任意テキストを解析して実際に開く。`options.readOnly` 対応。
+- `openPathReadOnly(finalPath)` — 拡張子に応じて Excel / Word / PowerPoint を COM 経由（PowerShell、
+  `Workbooks.Open(..., ReadOnly:=true)` 等）で読み取り専用起動する。対象外の拡張子や非 Windows では
+  `shell.openPath` にフォールバックする。
 - `resolveClipboardTargets(text, settings, openParent)` — テキストを整形・分割し、開くターゲットの配列に解決する（開く手前まで）。
 - `previewClipboardText(text, openParent)` — 開かずに、各行の解析結果（`kind` 付き）を返す。
 - `applyPrefixRules(text, rules)`

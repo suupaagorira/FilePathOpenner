@@ -16,10 +16,13 @@ const buildDom = () => {
         </main>
         <span id="homeShortcutDisplay"></span>
         <span id="homeParentShortcutDisplay"></span>
+        <span id="homeReadOnlyShortcutDisplay"></span>
         <input id="txtOpenShortcut" readonly />
         <div id="statusOpenShortcut"></div>
         <input id="txtOpenParentShortcut" readonly />
         <div id="statusOpenParentShortcut"></div>
+        <input id="txtOpenReadOnlyShortcut" readonly />
+        <div id="statusOpenReadOnlyShortcut"></div>
         <input id="chkSinglePath" type="checkbox" />
         <input id="chkTrimSpaces" type="checkbox" />
         <input id="txtRemoveList" />
@@ -71,6 +74,17 @@ const boot = async (overrides = {}) => {
 
 const keydown = (el, init) => {
     el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+};
+
+const keyup = (el, init) => {
+    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, ...init }));
+};
+
+// 修飾キーを 1 回タップ（keydown + keyup）する
+const tapModifier = (el, key, extra = {}) => {
+    const flag = { Alt: 'altKey', Control: 'ctrlKey', Shift: 'shiftKey', Meta: 'metaKey' }[key];
+    keydown(el, { key, code: key, [flag]: true, ...extra });
+    keyup(el, { key, code: key, ...extra });
 };
 
 afterEach(() => {
@@ -204,6 +218,114 @@ describe('shortcut recorder', () => {
 
         expect(document.getElementById('statusOpenShortcut').textContent).toContain('失敗');
         expect(input.classList.contains('error')).toBe(true);
+    });
+
+    test('records the read-only shortcut into its own setting', async () => {
+        const api = await boot();
+        const input = document.getElementById('txtOpenReadOnlyShortcut');
+
+        input.click();
+        keydown(input, { key: 'r', code: 'KeyR', ctrlKey: true, altKey: true });
+
+        expect(input.value).toBe('Ctrl+Alt+R');
+        expect(api.updateSettings.mock.calls.at(-1)[0].openReadOnlyShortcut).toBe('Ctrl+Alt+R');
+        expect(document.getElementById('statusOpenReadOnlyShortcut').textContent).toBe('有効');
+    });
+
+    test('rejects a combination already used by any other action', async () => {
+        const api = await boot({
+            getSettings: jest.fn().mockResolvedValue({ openReadOnlyShortcut: 'Ctrl+Alt+R' }),
+        });
+        const input = document.getElementById('txtOpenShortcut');
+
+        input.click();
+        keydown(input, { key: 'r', code: 'KeyR', ctrlKey: true, altKey: true });
+
+        expect(input.value).toBe('Ctrl+E');
+        expect(api.updateSettings).not.toHaveBeenCalled();
+    });
+});
+
+describe('double-tap modifier recording', () => {
+    test('captures a quick Alt double tap as Alt×2', async () => {
+        const api = await boot();
+        const input = document.getElementById('txtOpenShortcut');
+
+        input.click();
+        tapModifier(input, 'Alt');
+        expect(input.value).toContain('Alt×2'); // 1 回目のタップでヒントを表示
+        expect(input.classList.contains('recording')).toBe(true);
+        tapModifier(input, 'Alt');
+
+        expect(input.value).toBe('Alt×2');
+        expect(input.classList.contains('recording')).toBe(false);
+        expect(api.updateSettings.mock.calls.at(-1)[0].openShortcut).toBe('Alt×2');
+        expect(document.getElementById('statusOpenShortcut').textContent).toBe('有効');
+    });
+
+    test('captures Shift-held Alt double tap as Shift+Alt×2', async () => {
+        const api = await boot();
+        const input = document.getElementById('txtOpenShortcut');
+
+        input.click();
+        keydown(input, { key: 'Shift', code: 'ShiftLeft', shiftKey: true });
+        tapModifier(input, 'Alt', { shiftKey: true });
+        tapModifier(input, 'Alt', { shiftKey: true });
+
+        expect(input.value).toBe('Shift+Alt×2');
+        expect(api.updateSettings.mock.calls.at(-1)[0].openShortcut).toBe('Shift+Alt×2');
+    });
+
+    test('does not commit when the second tap is too slow', async () => {
+        const api = await boot();
+        const input = document.getElementById('txtOpenShortcut');
+        let now = 1000;
+        const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+
+        input.click();
+        tapModifier(input, 'Alt');
+        now = 3000; // 2 回目のタップは 2 秒後
+        tapModifier(input, 'Alt');
+        nowSpy.mockRestore();
+
+        expect(api.updateSettings).not.toHaveBeenCalled();
+        expect(input.classList.contains('recording')).toBe(true);
+        expect(input.value).toContain('Alt×2'); // ヒント表示のまま
+    });
+
+    test('a normal key between taps resets the double-tap sequence', async () => {
+        const api = await boot();
+        const input = document.getElementById('txtOpenShortcut');
+
+        input.click();
+        tapModifier(input, 'Alt');
+        keydown(input, { key: 'e', code: 'KeyE' }); // 修飾なしの通常キー → 却下 + タップ列リセット
+        tapModifier(input, 'Alt');
+
+        expect(api.updateSettings).not.toHaveBeenCalled();
+        expect(input.classList.contains('recording')).toBe(true);
+    });
+
+    test('holding a modifier (auto-repeat) does not create a double tap', async () => {
+        const api = await boot();
+        const input = document.getElementById('txtOpenShortcut');
+
+        input.click();
+        keydown(input, { key: 'Alt', code: 'AltLeft', altKey: true });
+        keydown(input, { key: 'Alt', code: 'AltLeft', altKey: true, repeat: true });
+        keydown(input, { key: 'Alt', code: 'AltLeft', altKey: true, repeat: true });
+        keyup(input, { key: 'Alt', code: 'AltLeft' });
+
+        expect(api.updateSettings).not.toHaveBeenCalled();
+        expect(input.classList.contains('recording')).toBe(true);
+    });
+
+    test('double-tap shortcut renders as keyboard chips on the home panel', async () => {
+        await boot({
+            getSettings: jest.fn().mockResolvedValue({ openShortcut: 'Shift+Alt×2' }),
+        });
+        const kbds = document.getElementById('homeShortcutDisplay').querySelectorAll('kbd');
+        expect(Array.from(kbds).map(k => k.textContent)).toEqual(['Shift', 'Alt×2']);
     });
 });
 

@@ -47,6 +47,7 @@
         const settings = {
             openShortcut: "Ctrl+E",
             openParentShortcut: "Ctrl+Shift+E",
+            openReadOnlyShortcut: "",
             openAsSinglePath: true,
             trimSpaces: true,
             removeList: "<>＜＞()（）[]「」{}｛｝\"”'’",
@@ -107,6 +108,7 @@
     const currentSettings = Object.assign({
         openShortcut: "Ctrl+E",
         openParentShortcut: "Ctrl+Shift+E",
+        openReadOnlyShortcut: "",
         openAsSinglePath: true,
         trimSpaces: true,
         removeList: "<>＜＞()（）[]「」{}｛｝\"”'’",
@@ -210,13 +212,20 @@
     // ---- ショートカットレコーダー ----
     const txtOpenShortcut = $("txtOpenShortcut");
     const txtOpenParentShortcut = $("txtOpenParentShortcut");
+    const txtOpenReadOnlyShortcut = $("txtOpenReadOnlyShortcut");
     const statusOpenShortcut = $("statusOpenShortcut");
     const statusOpenParentShortcut = $("statusOpenParentShortcut");
+    const statusOpenReadOnlyShortcut = $("statusOpenReadOnlyShortcut");
 
     const SHORTCUT_LABELS = {
         openShortcut: "「パスを開く」",
         openParentShortcut: "「親フォルダを開く」",
+        openReadOnlyShortcut: "「読み取り専用で開く」",
     };
+    // 2連打ショートカット表記（main プロセス側 doubleTap.js と揃える）
+    const DOUBLE_TAP_SUFFIX = "×2";
+    const DOUBLE_TAP_INTERVAL_MS = 400;
+    const MODIFIER_KEY_NAMES = { Control: "Ctrl", Alt: "Alt", Shift: "Shift", Meta: "Super" };
     const KEY_ALIASES = {
         " ": "Space",
         "Spacebar": "Space",
@@ -338,23 +347,37 @@
     function renderHomeShortcuts() {
         renderKbdCombo($("homeShortcutDisplay"), currentSettings.openShortcut);
         renderKbdCombo($("homeParentShortcutDisplay"), currentSettings.openParentShortcut);
+        renderKbdCombo($("homeReadOnlyShortcutDisplay"), currentSettings.openReadOnlyShortcut);
     }
 
     /**
+     * Collect the accelerators currently assigned to every other shortcut action.
+     *
+     * @param {string} excludeKey - Settings key of the action being edited.
+     * @returns {string[]} Non-empty accelerators of the other actions.
+     */
+    const otherShortcutAccels = (excludeKey) => Object.keys(SHORTCUT_LABELS)
+        .filter((key) => key !== excludeKey)
+        .map((key) => currentSettings[key] || "")
+        .filter(Boolean);
+
+    /**
      * Wire a shortcut input as a key recorder: click, press keys, auto-save.
+     * 修飾キーをすばやく 2 回押すと "Alt×2" / "Shift+Alt×2" 形式で記録される。
      *
      * @param {HTMLInputElement|null} input - Readonly text input.
      * @param {Element|null} statusEl - Inline status element.
      * @param {string} settingKey - Settings key to persist.
-     * @param {Function} getOtherAccel - Returns the accelerator of the other action.
      * @returns {void}
      */
-    const setupShortcutRecorder = (input, statusEl, settingKey, getOtherAccel) => {
+    const setupShortcutRecorder = (input, statusEl, settingKey) => {
         if (!input) return;
         shortcutFields.push({ input, statusEl, settingKey });
         input.value = currentSettings[settingKey] || "";
         let previousValue = "";
         let recording = false;
+        let pendingTap = null; // 押下中の修飾キー（2連打の候補）
+        let lastTap = null;    // 直前に完了した修飾キー単独タップ
 
         const stopRecording = (nextValue) => {
             recording = false;
@@ -367,19 +390,21 @@
             if (recording) return;
             recording = true;
             previousValue = input.value;
+            pendingTap = null;
+            lastTap = null;
             input.classList.add("recording");
             input.value = "キーを入力…";
             if (statusEl) {
-                statusEl.textContent = "Esc: キャンセル ／ Backspace: 無効化";
+                statusEl.textContent = "Esc: キャンセル ／ Backspace: 無効化 ／ 修飾キー2連打も可";
                 statusEl.className = "field-status recording";
             }
             input.focus();
         };
 
         const commit = (accel) => {
-            if (accel && accel === getOtherAccel()) {
+            if (accel && otherShortcutAccels(settingKey).includes(accel)) {
                 stopRecording(previousValue);
-                toast("もう一方のショートカットと同じキーは設定できません", "error");
+                toast("他のショートカットと同じキーは設定できません", "error");
                 return;
             }
             stopRecording(accel);
@@ -414,9 +439,20 @@
                 return;
             }
             if (isModifierKey(event.key)) {
+                const keyName = MODIFIER_KEY_NAMES[event.key];
+                if (keyName && !event.repeat) {
+                    pendingTap = {
+                        key: keyName,
+                        mods: mods.filter((mod) => mod !== keyName),
+                        downTime: Date.now(),
+                    };
+                }
                 input.value = mods.length ? `${mods.join("+")}+…` : "キーを入力…";
                 return;
             }
+            // 修飾キー以外が押されたら 2連打の判定はやり直し
+            pendingTap = null;
+            lastTap = null;
             const keyName = normalizeEventKey(event);
             if (!keyName) return;
             if (!F_KEY_PATTERN.test(keyName) && mods.length === 0) {
@@ -425,15 +461,38 @@
             }
             commit([...mods, keyName].join("+"));
         });
+        on(input, "keyup", (event) => {
+            if (!recording || !isModifierKey(event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const keyName = MODIFIER_KEY_NAMES[event.key];
+            if (!pendingTap || pendingTap.key !== keyName) {
+                pendingTap = null;
+                return;
+            }
+            const tap = pendingTap;
+            pendingTap = null;
+            const candidate = [...tap.mods, keyName + DOUBLE_TAP_SUFFIX].join("+");
+            const paired = lastTap
+                && lastTap.key === tap.key
+                && lastTap.mods.join("+") === tap.mods.join("+")
+                && tap.downTime - lastTap.downTime <= DOUBLE_TAP_INTERVAL_MS;
+            if (paired) {
+                lastTap = null;
+                commit(candidate);
+                return;
+            }
+            lastTap = tap;
+            input.value = `もう一度押すと ${candidate}`;
+        });
         on(input, "blur", () => {
             if (recording) stopRecording(previousValue);
         });
     };
 
-    setupShortcutRecorder(txtOpenShortcut, statusOpenShortcut, "openShortcut",
-        () => currentSettings.openParentShortcut || "");
-    setupShortcutRecorder(txtOpenParentShortcut, statusOpenParentShortcut, "openParentShortcut",
-        () => currentSettings.openShortcut || "");
+    setupShortcutRecorder(txtOpenShortcut, statusOpenShortcut, "openShortcut");
+    setupShortcutRecorder(txtOpenParentShortcut, statusOpenParentShortcut, "openParentShortcut");
+    setupShortcutRecorder(txtOpenReadOnlyShortcut, statusOpenReadOnlyShortcut, "openReadOnlyShortcut");
     updateShortcutStatuses([]);
 
     // ---- パスの整形 ----

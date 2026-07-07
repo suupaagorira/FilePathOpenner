@@ -19,13 +19,16 @@
     "jest-environment-jsdom": "^30.0.0"
   },
   "dependencies": {
-    "electron-store": "^10.0.1"
+    "electron-store": "^10.0.1",
+    "uiohook-napi": "^1.5.5"
   },
   "build": {
     "appId": "com.suupaagorira.filepathopenner",
     "productName": "FilePathOpenner",
+    "npmRebuild": false,
     "files": [
       "main.js",
+      "doubleTap.js",
       "preload.cjs",
       "renderer.js",
       "index.html",

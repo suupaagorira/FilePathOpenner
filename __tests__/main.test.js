@@ -21,13 +21,26 @@ jest.unstable_mockModule('electron-store', () => ({
   }))
 }));
 
+const uIOhookMock = { on: jest.fn(), start: jest.fn(), stop: jest.fn() };
+jest.unstable_mockModule('uiohook-napi', () => ({
+  default: {
+    uIOhook: uIOhookMock,
+    UiohookKey: {
+      Ctrl: 29, CtrlRight: 3613,
+      Alt: 56, AltRight: 3640,
+      Shift: 42, ShiftRight: 54,
+      Meta: 3675, MetaRight: 3676,
+    },
+  },
+}));
+
 const electronMock = {
   clipboard: { readText: jest.fn() },
   shell: { openExternal: jest.fn(), openPath: jest.fn() },
   dialog: { showErrorBox: jest.fn(), showMessageBox: jest.fn() },
   app: {},
   BrowserWindow: {},
-  globalShortcut: {},
+  globalShortcut: { register: jest.fn().mockReturnValue(true), unregisterAll: jest.fn() },
   Menu: {},
   Tray: {},
   nativeImage: {},
@@ -36,14 +49,21 @@ const electronMock = {
 jest.unstable_mockModule('electron', () => electronMock);
 
 const fs = (await import('fs')).default;
+const { execFile } = await import('child_process');
 const {
   openClipboardPath,
+  openTextTargets,
+  registerGlobalShortcuts,
   checkIfStartupRegistered,
   unRegisterStartupShortcut,
   applyPrefixRules,
   previewClipboardText,
 } = await import('../main.js');
 const { clipboard, shell, dialog } = electronMock;
+
+// uiohook のキーイベントリスナーは main.js の import 時に一度だけ登録される。
+// afterEach の clearAllMocks で消える前にここで捕まえておく。
+const uiohookListeners = Object.fromEntries(uIOhookMock.on.mock.calls);
 
 describe('main.js utilities', () => {
   const originalPlatform = process.platform;
@@ -303,5 +323,161 @@ describe('main.js utilities', () => {
     fs.unlink = jest.fn((_, cb) => cb());
     unRegisterStartupShortcut();
     expect(fs.unlink).toHaveBeenCalled();
+  });
+});
+
+describe('registerGlobalShortcuts with double-tap accelerators', () => {
+  const { globalShortcut } = electronMock;
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    for (const k of Object.keys(storeData)) delete storeData[k];
+    // フックの状態をリセット（2連打バインドなしで再登録すると stop される）
+    registerGlobalShortcuts();
+    jest.clearAllMocks();
+  });
+
+  test('routes ordinary accelerators to globalShortcut and double taps to the key hook', () => {
+    storeData.openShortcut = 'Ctrl+E';
+    storeData.openParentShortcut = 'Shift+Alt×2';
+    storeData.openReadOnlyShortcut = 'Alt×2';
+
+    const failures = registerGlobalShortcuts();
+
+    expect(failures).toEqual([]);
+    expect(globalShortcut.register).toHaveBeenCalledTimes(1);
+    expect(globalShortcut.register).toHaveBeenCalledWith('Ctrl+E', expect.any(Function));
+    expect(uIOhookMock.start).toHaveBeenCalledTimes(1);
+  });
+
+  test('stops the key hook when no double-tap binding remains', () => {
+    storeData.openShortcut = 'Alt×2';
+    registerGlobalShortcuts();
+    expect(uIOhookMock.start).toHaveBeenCalled();
+
+    storeData.openShortcut = 'Ctrl+E';
+    registerGlobalShortcuts();
+    expect(uIOhookMock.stop).toHaveBeenCalled();
+  });
+
+  test('reports an invalid double-tap accelerator as a failure', () => {
+    storeData.openShortcut = 'E×2';
+    const failures = registerGlobalShortcuts();
+    expect(failures).toEqual(['E×2']);
+    expect(uIOhookMock.start).not.toHaveBeenCalled();
+  });
+
+  test('a global Alt double tap opens the clipboard path', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    storeData.openShortcut = 'Alt×2';
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+    clipboard.readText.mockReturnValue('C:\\Temp');
+    fs.existsSync.mockReturnValue(true);
+    registerGlobalShortcuts();
+
+    const ALT = 56;
+    uiohookListeners.keydown({ keycode: ALT });
+    uiohookListeners.keyup({ keycode: ALT });
+    uiohookListeners.keydown({ keycode: ALT });
+    uiohookListeners.keyup({ keycode: ALT });
+
+    expect(shell.openPath).toHaveBeenCalledWith('C:\\Temp');
+  });
+});
+
+describe('read-only opening', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    for (const k of Object.keys(storeData)) delete storeData[k];
+  });
+
+  const setupOpenSettings = () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    storeData.openAsSinglePath = false;
+    storeData.trimSpaces = false;
+    storeData.removeList = '';
+  };
+
+  test('opens an Excel file read-only through PowerShell COM automation', () => {
+    setupOpenSettings();
+    fs.existsSync.mockReturnValue(true);
+
+    openTextTargets('C:\\docs\\book.xlsx', false, { readOnly: true });
+
+    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(execFile).toHaveBeenCalledTimes(1);
+    const [file, args] = execFile.mock.calls[0];
+    expect(file).toBe('powershell.exe');
+    const script = args[args.indexOf('-Command') + 1];
+    expect(script).toContain("'Excel.Application'");
+    expect(script).toContain("$path = 'C:\\docs\\book.xlsx'");
+    expect(script).toContain('$app.Workbooks.Open($path, 0, $true)');
+  });
+
+  test('selects Word and PowerPoint by extension', () => {
+    setupOpenSettings();
+    fs.existsSync.mockReturnValue(true);
+
+    openTextTargets('C:\\docs\\spec.docx', false, { readOnly: true });
+    openTextTargets('C:\\docs\\deck.pptx', false, { readOnly: true });
+
+    const scripts = execFile.mock.calls.map(call => call[1][call[1].indexOf('-Command') + 1]);
+    expect(scripts[0]).toContain("'Word.Application'");
+    expect(scripts[1]).toContain("'PowerPoint.Application'");
+  });
+
+  test('escapes single quotes in the file path', () => {
+    setupOpenSettings();
+    fs.existsSync.mockReturnValue(true);
+
+    openTextTargets("C:\\docs\\o'brien.xlsx", false, { readOnly: true });
+
+    const [, args] = execFile.mock.calls[0];
+    const script = args[args.indexOf('-Command') + 1];
+    expect(script).toContain("$path = 'C:\\docs\\o''brien.xlsx'");
+  });
+
+  test('falls back to a normal open for non-Office files', () => {
+    setupOpenSettings();
+    fs.existsSync.mockReturnValue(true);
+
+    openTextTargets('C:\\docs\\readme.txt', false, { readOnly: true });
+
+    expect(execFile).not.toHaveBeenCalled();
+    expect(shell.openPath).toHaveBeenCalledWith('C:\\docs\\readme.txt');
+  });
+
+  test('shows an error dialog when PowerShell fails', () => {
+    setupOpenSettings();
+    fs.existsSync.mockReturnValue(true);
+    execFile.mockImplementationOnce((file, args, options, cb) => cb(new Error('boom')));
+
+    openTextTargets('C:\\docs\\book.xlsx', false, { readOnly: true });
+
+    expect(dialog.showErrorBox).toHaveBeenCalledWith(
+      '読み取り専用で開けませんでした', expect.stringContaining('book.xlsx'));
+  });
+
+  test('openClipboardPath forwards the readOnly option', () => {
+    setupOpenSettings();
+    clipboard.readText.mockReturnValue('C:\\docs\\book.xlsx');
+    fs.existsSync.mockReturnValue(true);
+
+    openClipboardPath(false, { readOnly: true });
+
+    expect(execFile).toHaveBeenCalledTimes(1);
+    expect(shell.openPath).not.toHaveBeenCalled();
+  });
+
+  test('URLs still open in the browser in read-only mode', () => {
+    setupOpenSettings();
+    openTextTargets('https://example.com/page', false, { readOnly: true });
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/page');
+    expect(execFile).not.toHaveBeenCalled();
   });
 });
